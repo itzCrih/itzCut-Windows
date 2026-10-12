@@ -1,0 +1,72 @@
+{
+  "name": "itzcut-desktop",
+  "version": "2.0.0",
+  "description": "itzCut Desktop — Local Video & Audio Suite for Windows",
+  "productName": "itzCut Desktop",
+  "main": "electron/main.js",
+  "scripts": {
+    "test": "node test-suite.js",
+    "dev": "vite",
+    "build": "vite build",
+    "electron": "electron .",
+    "start": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "dist": "vite build && electron-builder --win --x64",
+    "dist:portable": "vite build && electron-builder --win portable --x64"
+  },
+  "build": {
+    "appId": "it.itzcrih.itzcut.desktop",
+    "productName": "itzCut Desktop",
+    "compression": "maximum",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "public/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "itzCut Desktop",
+      "differentialPackage": false
+    }
+  },
+  "keywords": [
+    "video",
+    "audio",
+    "converter",
+    "compressor",
+    "trimmer",
+    "ffmpeg",
+    "desktop",
+    "windows"
+  ],
+  "author": "itzcrih",
+  "license": "MIT",
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8",
+    "lucide-react": "^1.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.2.0",
+    "wait-on": "^8.0.3"
+  }
+}

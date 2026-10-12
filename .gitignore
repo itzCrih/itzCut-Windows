@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build and Packaging outputs
+dist/
+release/
+build/
+
+# Logs and Diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+itzCut-debug.log
+
+# Temporary test artifacts
+test_app_data/
+test_sample.mp4
+test_trimmed.mp4
+test_stretch_out.mp4
+test_boost_out.mp4
+test_tiktok_out.mp4
+
+# Editor and OS
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db

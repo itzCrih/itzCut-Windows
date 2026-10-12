@@ -26,6 +26,14 @@ export default function App() {
     }
   });
 
+  const [updateState, setUpdateState] = useState({
+    status: 'idle',
+    currentVersion: '2.0.0',
+    latestVersion: '2.0.0',
+    downloadPercent: 0,
+    error: null,
+  });
+
   // Toast helper with graceful exit animation
   const showToast = (message, type = 'info') => {
     const id = Date.now() + Math.random();
@@ -110,6 +118,53 @@ export default function App() {
       setDownloadProgress(data);
     });
 
+    // Auto-Updater subscriptions
+    const unsubUpdateStatus = window.itzCutAPI.onUpdateStatus && window.itzCutAPI.onUpdateStatus((data) => {
+      if (data.status === 'checking') {
+        setUpdateState((prev) => ({ ...prev, status: 'checking', error: null }));
+      } else if (data.status === 'available') {
+        setUpdateState((prev) => ({
+          ...prev,
+          status: 'downloading',
+          latestVersion: data.updateInfo?.version || prev.latestVersion,
+          downloadPercent: 0,
+        }));
+        showToast(`New update v${data.updateInfo.version} found! Downloading automatically...`, 'info');
+      } else if (data.status === 'up-to-date') {
+        setUpdateState((prev) => ({
+          ...prev,
+          status: 'up-to-date',
+          latestVersion: data.latestVersion || prev.currentVersion,
+        }));
+        if (data.manual) {
+          showToast(`itzCut Desktop is up to date (v${data.currentVersion || prev.currentVersion})!`, 'success');
+        }
+      } else if (data.status === 'error') {
+        setUpdateState((prev) => ({ ...prev, status: 'error', error: data.error }));
+        if (data.manual) {
+          showToast(`Update check failed: ${data.error}`, 'error');
+        }
+      }
+    });
+
+    const unsubUpdateProgress = window.itzCutAPI.onUpdateDownloadProgress && window.itzCutAPI.onUpdateDownloadProgress((data) => {
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'downloading',
+        downloadPercent: data.percent,
+      }));
+    });
+
+    const unsubUpdateDownloaded = window.itzCutAPI.onUpdateDownloaded && window.itzCutAPI.onUpdateDownloaded((data) => {
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'ready',
+        latestVersion: data.version,
+        downloadPercent: 100,
+      }));
+      showToast(`Update v${data.version} downloaded and ready to install!`, 'success');
+    });
+
     return () => {
       if (unsubProgress) unsubProgress();
       if (unsubComplete) unsubComplete();
@@ -117,8 +172,29 @@ export default function App() {
       if (unsubError) unsubError();
       if (unsubLog) unsubLog();
       if (unsubDownload) unsubDownload();
+      if (unsubUpdateStatus) unsubUpdateStatus();
+      if (unsubUpdateProgress) unsubUpdateProgress();
+      if (unsubUpdateDownloaded) unsubUpdateDownloaded();
     };
   }, []);
+
+  // Auto-Update Action Handlers
+  const handleCheckForUpdates = async () => {
+    if (!window.itzCutAPI?.checkForUpdates) return;
+    setUpdateState((prev) => ({ ...prev, status: 'checking', error: null }));
+    try {
+      await window.itzCutAPI.checkForUpdates();
+    } catch (err) {
+      setUpdateState((prev) => ({ ...prev, status: 'error', error: err.message }));
+      showToast('Error checking for updates: ' + err.message, 'error');
+    }
+  };
+
+  const handleInstallUpdate = () => {
+    if (window.itzCutAPI?.quitAndInstallUpdate) {
+      window.itzCutAPI.quitAndInstallUpdate();
+    }
+  };
 
   // Application Reset handler
   const handleResetApp = () => {
@@ -274,6 +350,9 @@ export default function App() {
                   setAnimationsEnabled(val);
                   localStorage.setItem('itzcut_animations', val ? 'true' : 'false');
                 }}
+                updateState={updateState}
+                onCheckForUpdates={handleCheckForUpdates}
+                onInstallUpdate={handleInstallUpdate}
                 onShowToast={showToast}
               />
             )}

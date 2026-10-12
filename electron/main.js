@@ -5,6 +5,7 @@ const url = require('url');
 const { Readable } = require('stream');
 const FFmpegManager = require('./ffmpeg-manager');
 const Transcoder = require('./transcoder');
+const AutoUpdater = require('./updater');
 
 // Optimization flags for stripped Windows 10/11 editions and low RAM usage
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
@@ -28,6 +29,7 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow = null;
 let ffmpegManager = null;
 let transcoder = null;
+let autoUpdater = null;
 
 function createWindow() {
   const iconPath = path.join(__dirname, '../public/logo.png');
@@ -69,6 +71,16 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+
+    // Initialize AutoUpdater with mainWindow
+    autoUpdater = new AutoUpdater(mainWindow);
+
+    // Automatically check for updates on startup after 3.5 seconds
+    setTimeout(() => {
+      if (autoUpdater) {
+        autoUpdater.checkForUpdates(false);
+      }
+    }, 3500);
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
@@ -424,6 +436,21 @@ ipcMain.handle('debug:openLogFile', async () => {
   if (fs.existsSync(desktopLogPath)) {
     await shell.openPath(desktopLogPath);
     return true;
+  }
+  return false;
+});
+
+// Auto-Updater IPC Handlers
+ipcMain.handle('update:check', () => {
+  if (autoUpdater) {
+    return autoUpdater.checkForUpdates(true);
+  }
+  return { status: 'error', error: 'AutoUpdater not initialized' };
+});
+
+ipcMain.handle('update:quitAndInstall', () => {
+  if (autoUpdater) {
+    return autoUpdater.quitAndInstall();
   }
   return false;
 });

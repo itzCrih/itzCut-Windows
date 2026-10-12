@@ -26,6 +26,9 @@ export default function SettingsTab({
   isDownloading,
   animationsEnabled = true,
   onToggleAnimations,
+  updateState,
+  onCheckForUpdates,
+  onInstallUpdate,
   onShowToast,
 }) {
   const [outputDir, setOutputDir] = useState(defaultOutputDir);
@@ -394,6 +397,80 @@ export default function SettingsTab({
                 >
                   <FileText size={12} style={{ display: 'inline', marginRight: '4px' }} />
                   Open Log
+                </button>
+              </div>
+            </div>
+
+            {/* Software Updates & Auto-Updater Card */}
+            <div
+              style={{
+                padding: '14px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <RefreshCw size={16} color="var(--gold-primary)" className={updateState?.status === 'checking' ? 'spin' : ''} />
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600 }}>Software Updates</div>
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                      Current: <strong>v{updateState?.currentVersion || '2.0.0'}</strong> • Auto-checks GitHub on startup
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '12px' }}
+                  onClick={onCheckForUpdates}
+                  disabled={updateState?.status === 'checking' || updateState?.status === 'downloading'}
+                >
+                  <RefreshCw size={12} className={updateState?.status === 'checking' ? 'spin' : ''} style={{ display: 'inline', marginRight: '4px' }} />
+                  {updateState?.status === 'checking' ? 'Checking...' : 'Check for Updates'}
+                </button>
+              </div>
+
+              {updateState?.status === 'downloading' && (
+                <div>
+                  <div className="progress-track">
+                    <div
+                      className="progress-fill animated"
+                      style={{ width: `${updateState.downloadPercent || 0}%` }}
+                    />
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--gold-primary)', marginTop: '4px' }}>
+                    Downloading latest update package: {updateState.downloadPercent || 0}%...
+                  </div>
+                </div>
+              )}
+
+              {updateState?.status === 'ready' && (
+                <button
+                  type="button"
+                  className="btn-gold"
+                  onClick={onInstallUpdate}
+                  style={{ width: '100%', padding: '9px 16px' }}
+                >
+                  <Zap size={14} />
+                  <span>Restart & Install Update (v{updateState.latestVersion})</span>
+                </button>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11.5px', color: 'var(--text-dim)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
+                <span>Repository: itzCrih/itzCut-Windows</span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '3px 8px', fontSize: '11px' }}
+                  onClick={() => window.itzCutAPI && window.itzCutAPI.openExternal('https://github.com/itzCrih/itzCut-Windows/releases')}
+                >
+                  GitHub Releases
                 </button>
               </div>
             </div>

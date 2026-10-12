@@ -1316,3 +1316,12 @@ body.disable-page-animations .page-view-animated {
   word-break: break-all;
   line-height: 1.5;
 }
+
+.spin {
+  animation: spinRotate 1s linear infinite;
+}
+
+@keyframes spinRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

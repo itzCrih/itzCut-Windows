@@ -73,4 +73,24 @@ contextBridge.exposeInMainWorld('itzCutAPI', {
   getDebugMode: () => ipcRenderer.invoke('debug:getStatus'),
   writeDebugLog: (category, message, details) => ipcRenderer.invoke('debug:log', { category, message, details }),
   openDebugLogFile: () => ipcRenderer.invoke('debug:openLogFile'),
+
+  // Software Auto-Updates
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  quitAndInstallUpdate: () => ipcRenderer.invoke('update:quitAndInstall'),
+  onUpdateStatus: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('update:status', listener);
+    return () => ipcRenderer.removeListener('update:status', listener);
+  },
+  onUpdateDownloadProgress: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('update:download-progress', listener);
+    return () => ipcRenderer.removeListener('update:download-progress', listener);
+  },
+  onUpdateDownloaded: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('update:downloaded', listener);
+    return () => ipcRenderer.removeListener('update:downloaded', listener);
+  },
 });
+

@@ -3,9 +3,19 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
+
+[assembly: AssemblyTitle("itzCut Desktop Installer")]
+[assembly: AssemblyDescription("itzCut Desktop — Native Windows Web Installer")]
+[assembly: AssemblyCompany("itzcrih.it")]
+[assembly: AssemblyProduct("itzCut Desktop")]
+[assembly: AssemblyCopyright("Copyright © 2026 itzcrih.it")]
+[assembly: AssemblyTrademark("itzCut")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
 
 namespace ItzCutInstaller
 {

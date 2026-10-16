@@ -11,7 +11,8 @@
     "electron": "electron .",
     "start": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
     "dist": "vite build && electron-builder --win --x64",
-    "dist:portable": "vite build && electron-builder --win portable --x64"
+    "dist:portable": "vite build && electron-builder --win portable --x64",
+    "release": "node scripts/publish-release.js"
   },
   "build": {
     "appId": "it.itzcrih.itzcut.desktop",

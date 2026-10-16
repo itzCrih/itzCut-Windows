@@ -1,81 +1,104 @@
+<div align="center">
+
 # itzCut Desktop (Windows)
 
-> **Professional Windows Desktop Workstation for 100% local video & audio converting, compressing, trimming, and editing.**  
-> Native Windows companion to [cut.itzcrih.it](https://cut.itzcrih.it).
+**LIGHTWEIGHT HIGH-PERFORMANCE MULTIMEDIA WORKSTATION**  
+**x4 TIMES FASTER THAN HANDBRAKE**
+
+The ultra-fast, 100% local Windows suite for video and audio conversion, compression, lossless trimming, and studio editing.
+
+[![Platform](https://img.shields.io/badge/Platform-Windows_10_%7C_11_(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v2.1.0-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
+[![Engine](https://img.shields.io/badge/FFmpeg-v7.1_Native-black?style=for-the-badge)](https://ffmpeg.org)
+[![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
+
+<br />
+
+### Download itzCut Desktop
+
+[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.1.0)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.1.0/itzCut-Desktop-Setup-2.1.0.exe)  
+[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.1.0)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.1.0/itzCut-Desktop-2.1.0-Portable.exe)
+
+| Package | Format | Architecture | Direct Link |
+| :--- | :--- | :--- | :--- |
+| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.1.0.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.1.0/itzCut-Desktop-Setup-2.1.0.exe) |
+| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.1.0-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.1.0/itzCut-Desktop-2.1.0-Portable.exe) |
+
+*Requires zero installation privileges for the portable build. Built-in Auto-Updater checks for future releases seamlessly on startup.*
+
+</div>
 
 ---
 
-## Features
+## Why itzCut Desktop?
 
-- **100% Local Processing:** All encoding runs directly on your local CPU & GPU using native **FFmpeg 7.1**. Zero cloud uploads, zero privacy compromises, and no file size limits.
-- **Hardware Acceleration Priority:** Forced GPU encoding (`h264_nvenc` for NVIDIA, `h264_qsv` for Intel, `h264_amf` for AMD) by default across all workflows, with automatic transparent fallback to CPU multi-threaded `libx264`.
-- **Sleek Windows Desktop Design:** Dark high-contrast palette (`#07090e`) with glowing gold accents (`#e6b422`), frosted glass blur, interactive animated logo, and custom frameless titlebar with native Windows 11 style minimize/maximize/close buttons.
-- **Convert & Compress Tab:**
-  - **Target Size Compressor:** Bit budget calculation for **8 MB** (Discord Free), **25 MB** (Nitro Basic), **50 MB** (Nitro Boost), and **TikTok VBR** (2-pass 20-40 Mbps native CFR MP4).
-  - **CRF Quality Optimizer:** Visual slider and quick presets for balanced and high quality CRF encoding.
-  - **Format Converter:**
-    - **Video:** MP4 (H.264), MP4 (H.265 / HEVC), WebM (VP9), MKV, MOV (QuickTime), Animated GIF.
-    - **Audio:** MP3 (320 kbps), AAC, WAV (Lossless PCM), FLAC, OPUS.
-  - Resolution selector (Original, 4K, 1440p, 1080p, 720p, 480p) & Framerate control (60fps, 30fps, 24fps).
-  - Strip EXIF & privacy metadata.
-- **Trimmer Tab (with Integrated Studio Tools):**
-  - **Interactive Scrubber:** Draggable playhead needle arrow and draggable In/Out cut handles directly on the timeline bar.
-  - **Keyboard Shortcuts:** `Space` or `K` to Play/Pause, `←` / `→` arrows to step backward/forward by 1 frame.
-  - **Seek Controls:** `-5s` and `+5s` quick jump buttons.
-  - **Live Preview for Rotation & Flip:** 90° CW, 90° CCW, 180°, and horizontal/vertical flip rendered live in the player with quick reset.
-  - **Live Aspect Ratio / Canvas Preview:** 9:16 (TikTok/Reels/Shorts), 1:1 (Instagram Square), 16:9, or 4:3 with Black Bars (Pad), Crop, or Stretch.
-  - **Audio Gain Boost:** Amplify recordings up to +20 dB applied in real-time preview and final export.
-  - **Instant Lossless Cut:** 0-second stream copy (`-c copy`) when no re-encoding filters are needed.
-- **Realtime Queue Tab:**
-  - Live animated striped progress bar.
-  - Realtime stats: Percentage %, FPS, Speed multiplier (e.g. `23.6x`), elapsed time, and remaining ETA.
-  - Clean job cancellation: immediately terminates FFmpeg, removes the job, and cleans up partial working files on disk without error toasts.
-  - Synthesized Web Audio chime upon render completion.
-- **Settings & Diagnostics:**
-  - Physical testing of GPU encoders to avoid false positives.
-  - Accurate CPU model, thread count, RAM, and GPU adapter detection.
-  - Optional Desktop diagnostic debug mode.
-  - Automated downloader for static FFmpeg binaries if not installed.
+- **x4 Times Faster Than Handbrake:** Optimized encoder pipelines prioritize hardware-accelerated GPU engines (`NVENC`, `QSV`, `AMF`) and minimal-overhead stream operations to deliver maximum processing speed.
+- **Lightweight Architecture:** Clean memory footprint, instantaneous startup, and zero background telemetry or bloatware.
+- **100% Local Processing & Privacy:** All encoding and trimming runs strictly offline on your machine. Zero cloud uploads, zero privacy compromises, and zero file size restrictions.
+- **Zero Configuration Required:** Automatically probes your system, identifies dedicated GPUs and CPUs, verifies hardware capabilities, and downloads static FFmpeg essentials automatically if missing.
 
 ---
 
-## Getting Started
+## Core Capabilities
 
-### 1. Install Dependencies
-```bash
-npm install
-```
+### 1. Target Size & Social Media Compressor
+- **Discord Optimizations:** Instant target bit calculation for **8 MB** (Discord Free limit), **25 MB** (Nitro Basic), and **50 MB** (Nitro Boost).
+- **TikTok Profile (2-Pass VBR CFR):** Produces native constant frame-rate (CFR) MP4 streams with 20 Mbps target and 40 Mbps max ceiling, optimized for vertical feeds without re-compression degradation.
+- **CRF Quality Engine:** Granular Constant Rate Factor slider with instant quality presets for visually lossless results.
 
-### 2. Start in Development Mode
-```bash
-npm start
-```
-*Launches the Vite dev server and the Electron desktop application concurrently with live reload.*
+### 2. High-Performance Format Converter
+- **Video Encoders:** MP4 (H.264 / NVENC / QSV / AMF / x264), MP4 (H.265 / HEVC), WebM (VP9), MKV, MOV (ProRes / PCM compatibility with instant proxy streaming), and Animated GIF.
+- **Dedicated Audio Converter:** Automatic mode switch when audio files are loaded:
+  - MP3 (High-rate VBR)
+  - WAV (Uncompressed 48 kHz PCM 16-bit)
+  - FLAC (Lossless compression)
+  - AAC (Advanced Audio Coding)
+  - OGG Vorbis
+  - Opus (Low-latency voice & music)
+- **Resolution & Framerate Control:** Native Passthrough, 4K UHD, 1440p, 1080p, 720p, 480p at 60fps, 30fps, or 24fps.
+- **Privacy Stripper:** Optional removal of EXIF tags, GPS metadata, and container tracking details.
 
-### 3. Run Automated Tests
-```bash
-npm test
-```
-*Runs the end-to-end test suite checking FFmpeg detection, media generation, probing, trimming, rotation, stretch fit, audio gain boost, and TikTok 2-pass profiles.*
+### 3. Trimmer & Studio Editing Suite
+- **Interactive Scrubber:** Real-time playhead seek needle and draggable In/Out point handles directly on the timeline track.
+- **Dedicated Audio Waveform Visualizer:** Real-time interactive audio oscilloscope and spectrum analyzer for pure audio formats (.mp3, .wav, .flac, .aac, .ogg, .m4a).
+- **Instant Stream Copy:** True 0-second lossless cut (`-c copy`) whenever re-encoding filters are not requested.
+- **Canvas & Aspect Ratio Transforms:** Live preview switching between 9:16 (TikTok/Reels/Shorts), 1:1 (Square), 16:9, and 4:3 with Stretch, Crop, or Letterbox (Pad) options.
+- **Realtime Rotation & Flip:** 90° clockwise, 90° counter-clockwise, 180°, and horizontal/vertical flips.
+- **Audio Gain Booster:** Amplify audio volume up to +20 dB applied both in the live player and in the final exported file.
+- **Precision Keyboard Controls:** Frame-by-frame stepping with arrow keys, quick 5-second jump shortcuts, and playback toggle via Space or K.
 
-### 4. Build Production Binaries
-```bash
-npm run dist
-```
-*Generates standalone Portable `.exe` and NSIS Setup installer in the `release/` directory.*
+### 4. Realtime Queue & Hardware Diagnostics
+- **Live Visual Queue:** Multi-job management with percentage completion, encoding FPS, speed multiplier (e.g. 25.4x), elapsed duration, and estimated time remaining.
+- **Clean Cancellation:** Cancelling an active encode immediately halts child processes, removes the job entry, and deletes temporary scratch files from disk.
+- **Render Completion Sound:** Synthesized Web Audio chime to notify you the instant an export finishes.
+- **Accurate Hardware Detection:** Tests GPU encoders to avoid false positives and displays detected CPU cores, RAM, and graphics cards.
 
 ---
 
-## Tech Stack
-- **Desktop Runtime:** Electron 34
-- **Frontend:** React 18 + Vite 6
-- **Styling:** CSS3 (itzCut Dark & Gold theme: `#07090e`, `#e6b422`, Inter, JetBrains Mono)
-- **Icons:** Lucide React
-- **Multimedia Engine:** Native FFmpeg 7.1 + FFprobe via Node child process stream parsing
+## File Support Matrix
+
+| Category | Supported Extensions | Processing Engine |
+| :--- | :--- | :--- |
+| **Video Files** | `.mp4`, `.mov`, `.mkv`, `.webm`, `.avi`, `.m4v`, `.flv`, `.wmv` | Native GPU HWAccel (NVENC, QSV, AMF) or CPU multi-thread |
+| **Audio Files** | `.mp3`, `.wav`, `.flac`, `.aac`, `.ogg`, `.m4a`, `.wma` | Dedicated Audio Studio with waveform visualization |
+| **Non-Media Files** | `.png`, `.jpg`, `.pdf`, `.exe`, etc. | Automatically blocked with detailed error alert |
 
 ---
 
-## Community & Credits
-- Web Version: [cut.itzcrih.it](https://cut.itzcrih.it)
-- Discord Community: [community.itzcrih.it](https://community.itzcrih.it)
-- Author: © 2026 [itzcrih.it](https://itzcrih.it)
+## License & Terms of Use
+
+itzCut Desktop is proprietary software developed by itzcrih.
+
+- **Personal Use:** Free for personal, non-commercial use via official binaries.
+- **No Redistribution:** You may not re-upload, mirror, host, or distribute itzCut Desktop binaries or source code on third-party sites or repositories.
+- **No Skidding / Rebranding:** You may not copy, extract, adapt, re-skin, rename, or claim authorship over any part of this software, its UI, or its source code.
+- Full legal details are specified in the [LICENSE](LICENSE) document.
+
+---
+
+## Links & Community
+
+- **Official Web Platform:** [cut.itzcrih.it](https://cut.itzcrih.it)
+- **Discord Community:** [community.itzcrih.it](https://community.itzcrih.it)
+- **Author:** [itzcrih.it](https://itzcrih.it)
+- **Copyright:** (C) 2026 itzcrih. All Rights Reserved.

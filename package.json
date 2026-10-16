@@ -54,7 +54,7 @@
     "windows"
   ],
   "author": "itzcrih",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "adm-zip": "^0.5.16"
   },

@@ -34,3 +34,6 @@ test_tiktok_out.mp4
 *.sw?
 .DS_Store
 Thumbs.db
+
+# Internal scripts
+scripts/

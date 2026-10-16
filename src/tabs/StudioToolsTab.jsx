@@ -122,6 +122,7 @@ export default function StudioToolsTab({
         mediaInfo={mediaInfo}
         onFileSelected={onFileSelected}
         onFileCleared={onFileCleared}
+        onShowToast={onShowToast}
       />
 
       {currentFile && (

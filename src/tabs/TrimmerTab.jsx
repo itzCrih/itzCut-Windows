@@ -10,10 +10,13 @@ import {
   Crop,
   Volume2,
   Sparkles,
+  Music,
 } from 'lucide-react';
 import DropZone from '../components/DropZone';
 import MediaPreview from '../components/MediaPreview';
+import AudioPreview from '../components/AudioPreview';
 import { formatTimecode, parseTimecode } from '../utils/formatters';
+import { isAudioMedia } from '../utils/fileTypes';
 
 export default function TrimmerTab({
   currentFile,
@@ -38,25 +41,29 @@ export default function TrimmerTab({
   const [loudnorm, setLoudnorm] = useState(false);
   const [exportAsGif, setExportAsGif] = useState(false);
   const [gifFps, setGifFps] = useState(15);
+  const [audioExportFormat, setAudioExportFormat] = useState('original'); // 'original', 'mp3', 'wav', 'aac', 'flac', 'opus'
 
   const [outputDir, setOutputDir] = useState(defaultOutputDir || '');
 
+  const isAudio = isAudioMedia(currentFile, mediaInfo);
+
   // Keep endTime updated if file loads later
   useEffect(() => {
-    if (mediaInfo?.duration && endTime === 0) {
+    if (mediaInfo?.duration && (endTime === 0 || endTime > mediaInfo.duration)) {
       setEndTime(mediaInfo.duration);
     }
   }, [mediaInfo, endTime]);
 
   // If rotation, aspect ratio, stretch fit, audio boost, or speed is changed, lossless copy cannot be used
-  const requiresReencode =
-    rotation !== 'none' ||
-    aspectRatio !== 'original' ||
-    canvasFit === 'stretch' ||
-    audioBoostDb > 0 ||
-    loudnorm ||
-    exportAsGif ||
-    speed !== 1;
+  const requiresReencode = isAudio
+    ? (audioBoostDb > 0 || loudnorm || speed !== 1 || (audioExportFormat !== 'original' && audioExportFormat !== currentFile?.ext))
+    : (rotation !== 'none' ||
+      aspectRatio !== 'original' ||
+      canvasFit === 'stretch' ||
+      audioBoostDb > 0 ||
+      loudnorm ||
+      exportAsGif ||
+      speed !== 1);
 
   const effectiveLossless = losslessCopy && !requiresReencode;
 
@@ -70,7 +77,7 @@ export default function TrimmerTab({
 
   const handleStartTrim = () => {
     if (!currentFile) {
-      onShowToast('Please load a video first!', 'error');
+      onShowToast('Please load a media file first!', 'error');
       return;
     }
 
@@ -80,7 +87,10 @@ export default function TrimmerTab({
     }
 
     const baseName = currentFile.name.substring(0, currentFile.name.lastIndexOf('.')) || currentFile.name;
-    const ext = exportAsGif ? 'gif' : (currentFile.ext || 'mp4');
+    const ext = isAudio
+      ? (audioExportFormat === 'original' ? (currentFile.ext || 'mp3') : audioExportFormat)
+      : (exportAsGif ? 'gif' : (currentFile.ext || 'mp4'));
+
     const targetDir = outputDir || defaultOutputDir;
     const outputFile = `${targetDir}\\${baseName}_trimmed_${Date.now()}.${ext}`;
 
@@ -103,8 +113,12 @@ export default function TrimmerTab({
         loudnorm,
         exportAsGif,
         gifFps,
+        isAudioOnly: isAudio,
+        audioExportFormat: ext,
       },
-      title: exportAsGif
+      title: isAudio
+        ? `Trim Audio (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
+        : exportAsGif
         ? `HD GIF Clip (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
         : `Trim Clip (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`,
       inputName: currentFile.name,
@@ -121,25 +135,44 @@ export default function TrimmerTab({
         mediaInfo={mediaInfo}
         onFileSelected={onFileSelected}
         onFileCleared={onFileCleared}
+        onShowToast={onShowToast}
       />
 
       {currentFile && (
         <>
-          {/* Visual Video Player with live draggable timeline handles & live rotation/aspect preview */}
-          <MediaPreview
-            filePath={currentFile.path}
-            duration={mediaInfo?.duration || 0}
-            trimStart={startTime}
-            trimEnd={endTime}
-            onSetTrimStart={(time) => setStartTime(time)}
-            onSetTrimEnd={(time) => setEndTime(time)}
-            isMuted={muteAudio}
-            rotation={rotation}
-            aspectRatio={aspectRatio}
-            canvasFit={canvasFit}
-            audioBoostDb={audioBoostDb}
-            speed={speed}
-          />
+          {/* Conditionally render dedicated Audio Player or Video Player */}
+          {isAudio ? (
+            <AudioPreview
+              filePath={currentFile.path}
+              fileName={currentFile.name}
+              fileSize={currentFile.size}
+              duration={mediaInfo?.duration || 0}
+              trimStart={startTime}
+              trimEnd={endTime}
+              onSetTrimStart={(time) => setStartTime(time)}
+              onSetTrimEnd={(time) => setEndTime(time)}
+              isMuted={muteAudio}
+              audioBoostDb={audioBoostDb}
+              speed={speed}
+              mediaInfo={mediaInfo}
+            />
+          ) : (
+            <MediaPreview
+              filePath={currentFile.path}
+              duration={mediaInfo?.duration || 0}
+              trimStart={startTime}
+              trimEnd={endTime}
+              onSetTrimStart={(time) => setStartTime(time)}
+              onSetTrimEnd={(time) => setEndTime(time)}
+              isMuted={muteAudio}
+              rotation={rotation}
+              aspectRatio={aspectRatio}
+              canvasFit={canvasFit}
+              audioBoostDb={audioBoostDb}
+              speed={speed}
+              mediaInfo={mediaInfo}
+            />
+          )}
 
           {/* Settings Grid */}
           <div className="grid-2">
@@ -290,125 +323,184 @@ export default function TrimmerTab({
             <div className="card">
               <div className="card-header">
                 <div className="card-title">
-                  <Sliders size={18} />
-                  <span>Studio Enhancements</span>
+                  {isAudio ? <Music size={18} /> : <Sliders size={18} />}
+                  <span>{isAudio ? 'Audio Studio & Export Format' : 'Studio Enhancements'}</span>
                 </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {/* Rotate & Flip with Reset button */}
-                <div className="form-group">
-                  <label className="form-label">
-                    <span>Rotate & Flip</span>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() => {
-                        setRotation('none');
-                        onShowToast('Rotation reset to default (0°)', 'info');
-                      }}
-                      title="Reset rotation to default (0°)"
-                      style={{ padding: '3px 8px', borderColor: 'rgba(230, 180, 34, 0.4)' }}
-                    >
-                      <RotateCw size={13} color="#e6b422" />
-                    </button>
-                  </label>
-                  <select
-                    className="form-select"
-                    value={rotation}
-                    onChange={(e) => setRotation(e.target.value)}
-                  >
-                    <option value="none">Normal (No Rotation)</option>
-                    <option value="90cw">Rotate 90° Clockwise</option>
-                    <option value="90ccw">Rotate 90° Counter-Clockwise</option>
-                    <option value="180">Rotate 180° (Upside Down)</option>
-                    <option value="hflip">Flip Horizontally (Mirror)</option>
-                    <option value="vflip">Flip Vertically</option>
-                  </select>
-                </div>
-
-                {/* Live Aspect Ratio / Canvas */}
-                <div className="grid-2">
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">
-                      <span>Aspect Ratio</span>
-                      <Crop size={14} color="#e6b422" />
-                    </label>
-                    <select
-                      className="form-select"
-                      value={aspectRatio}
-                      onChange={(e) => setAspectRatio(e.target.value)}
-                    >
-                      <option value="original">Original Aspect</option>
-                      <option value="9:16">9:16 (TikTok / Reels / Shorts)</option>
-                      <option value="16:9">16:9 (Landscape YouTube)</option>
-                      <option value="1:1">1:1 (Instagram Square)</option>
-                      <option value="4:3">4:3 (Classic Retro)</option>
-                    </select>
-                  </div>
-
-                  {aspectRatio !== 'original' && (
+                {isAudio ? (
+                  <>
+                    {/* Audio Export Format */}
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">Fit Mode</label>
+                      <label className="form-label">
+                        <span>Export Audio Format</span>
+                        <Music size={14} color="#e6b422" />
+                      </label>
                       <select
                         className="form-select"
-                        value={canvasFit}
-                        onChange={(e) => setCanvasFit(e.target.value)}
+                        value={audioExportFormat}
+                        onChange={(e) => setAudioExportFormat(e.target.value)}
                       >
-                        <option value="pad">Fit with Black Bars (Pad)</option>
-                        <option value="crop">Fill & Center Crop</option>
-                        <option value="stretch">Stretch to Fit</option>
+                        <option value="original">Original Format ({(currentFile?.ext || 'Audio').toUpperCase()})</option>
+                        <option value="mp3">MP3 (Universal 320 kbps)</option>
+                        <option value="wav">WAV (Uncompressed Studio PCM)</option>
+                        <option value="aac">AAC (M4A High Efficiency)</option>
+                        <option value="flac">FLAC (Lossless Master)</option>
+                        <option value="opus">OPUS (OGG Opus)</option>
                       </select>
                     </div>
-                  )}
-                </div>
 
-                {/* Audio Gain Boost */}
-                {!muteAudio && (
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">
-                      <span>Audio Gain Boost: {audioBoostDb > 0 ? `+${audioBoostDb} dB` : 'Off'}</span>
-                      <Volume2 size={14} color="#e6b422" />
-                    </label>
-                    <input
-                      type="range"
-                      className="range-slider"
-                      min="0"
-                      max="20"
-                      value={audioBoostDb}
-                      onChange={(e) => setAudioBoostDb(parseInt(e.target.value, 10))}
-                    />
-                  </div>
-                )}
-
-                {/* EBU R128 Loudness Normalization & GIF Export */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {!muteAudio && (
-                    <label className="toggle-wrapper">
-                      <div
-                        className={`toggle-switch ${loudnorm ? 'on' : ''}`}
-                        onClick={() => setLoudnorm(!loudnorm)}
-                      >
-                        <div className="toggle-knob" />
+                    {/* Audio Gain Boost */}
+                    {!muteAudio && (
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">
+                          <span>Audio Gain Boost: {audioBoostDb > 0 ? `+${audioBoostDb} dB` : 'Off'}</span>
+                          <Volume2 size={14} color="#e6b422" />
+                        </label>
+                        <input
+                          type="range"
+                          className="range-slider"
+                          min="0"
+                          max="20"
+                          value={audioBoostDb}
+                          onChange={(e) => setAudioBoostDb(parseInt(e.target.value, 10))}
+                        />
                       </div>
-                      <span style={{ fontSize: '13px' }}>
-                        EBU R128 Broadcast Loudness Normalization (-16 LUFS)
-                      </span>
-                    </label>
-                  )}
+                    )}
 
-                  <label className="toggle-wrapper">
-                    <div
-                      className={`toggle-switch ${exportAsGif ? 'on' : ''}`}
-                      onClick={() => setExportAsGif(!exportAsGif)}
-                    >
-                      <div className="toggle-knob" />
+                    {/* EBU R128 Loudness Normalization */}
+                    {!muteAudio && (
+                      <label className="toggle-wrapper">
+                        <div
+                          className={`toggle-switch ${loudnorm ? 'on' : ''}`}
+                          onClick={() => setLoudnorm(!loudnorm)}
+                        >
+                          <div className="toggle-knob" />
+                        </div>
+                        <span style={{ fontSize: '13px' }}>
+                          EBU R128 Broadcast Loudness Normalization (-16 LUFS)
+                        </span>
+                      </label>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* Rotate & Flip with Reset button */}
+                    <div className="form-group">
+                      <label className="form-label">
+                        <span>Rotate & Flip</span>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => {
+                            setRotation('none');
+                            onShowToast('Rotation reset to default (0°)', 'info');
+                          }}
+                          title="Reset rotation to default (0°)"
+                          style={{ padding: '3px 8px', borderColor: 'rgba(230, 180, 34, 0.4)' }}
+                        >
+                          <RotateCw size={13} color="#e6b422" />
+                        </button>
+                      </label>
+                      <select
+                        className="form-select"
+                        value={rotation}
+                        onChange={(e) => setRotation(e.target.value)}
+                      >
+                        <option value="none">Normal (No Rotation)</option>
+                        <option value="90cw">Rotate 90° Clockwise</option>
+                        <option value="90ccw">Rotate 90° Counter-Clockwise</option>
+                        <option value="180">Rotate 180° (Upside Down)</option>
+                        <option value="hflip">Flip Horizontally (Mirror)</option>
+                        <option value="vflip">Flip Vertically</option>
+                      </select>
                     </div>
-                    <span style={{ fontSize: '13px' }}>
-                      Export Trimmed Clip as High-Definition Animated GIF
-                    </span>
-                  </label>
-                </div>
+
+                    {/* Live Aspect Ratio / Canvas */}
+                    <div className="grid-2">
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">
+                          <span>Aspect Ratio</span>
+                          <Crop size={14} color="#e6b422" />
+                        </label>
+                        <select
+                          className="form-select"
+                          value={aspectRatio}
+                          onChange={(e) => setAspectRatio(e.target.value)}
+                        >
+                          <option value="original">Original Aspect</option>
+                          <option value="9:16">9:16 (TikTok / Reels / Shorts)</option>
+                          <option value="16:9">16:9 (Landscape YouTube)</option>
+                          <option value="1:1">1:1 (Instagram Square)</option>
+                          <option value="4:3">4:3 (Classic Retro)</option>
+                        </select>
+                      </div>
+
+                      {aspectRatio !== 'original' && (
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label">Fit Mode</label>
+                          <select
+                            className="form-select"
+                            value={canvasFit}
+                            onChange={(e) => setCanvasFit(e.target.value)}
+                          >
+                            <option value="pad">Fit with Black Bars (Pad)</option>
+                            <option value="crop">Fill & Center Crop</option>
+                            <option value="stretch">Stretch to Fit</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Audio Gain Boost */}
+                    {!muteAudio && (
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">
+                          <span>Audio Gain Boost: {audioBoostDb > 0 ? `+${audioBoostDb} dB` : 'Off'}</span>
+                          <Volume2 size={14} color="#e6b422" />
+                        </label>
+                        <input
+                          type="range"
+                          className="range-slider"
+                          min="0"
+                          max="20"
+                          value={audioBoostDb}
+                          onChange={(e) => setAudioBoostDb(parseInt(e.target.value, 10))}
+                        />
+                      </div>
+                    )}
+
+                    {/* EBU R128 Loudness Normalization & GIF Export */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {!muteAudio && (
+                        <label className="toggle-wrapper">
+                          <div
+                            className={`toggle-switch ${loudnorm ? 'on' : ''}`}
+                            onClick={() => setLoudnorm(!loudnorm)}
+                          >
+                            <div className="toggle-knob" />
+                          </div>
+                          <span style={{ fontSize: '13px' }}>
+                            EBU R128 Broadcast Loudness Normalization (-16 LUFS)
+                          </span>
+                        </label>
+                      )}
+
+                      <label className="toggle-wrapper">
+                        <div
+                          className={`toggle-switch ${exportAsGif ? 'on' : ''}`}
+                          onClick={() => setExportAsGif(!exportAsGif)}
+                        >
+                          <div className="toggle-knob" />
+                        </div>
+                        <span style={{ fontSize: '13px' }}>
+                          Export Trimmed Clip as High-Definition Animated GIF
+                        </span>
+                      </label>
+                    </div>
+                  </>
+                )}
 
                 {/* Output Folder */}
                 <div className="form-group" style={{ marginBottom: 0 }}>
@@ -434,7 +526,7 @@ export default function TrimmerTab({
                   onClick={handleStartTrim}
                 >
                   <Scissors size={16} />
-                  <span>Execute Clip Trim</span>
+                  <span>{isAudio ? 'Execute Audio Trim' : 'Execute Clip Trim'}</span>
                 </button>
               </div>
             </div>

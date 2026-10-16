@@ -61,8 +61,10 @@ export const CONVERTER_VIDEO_FORMATS = [
 
 export const CONVERTER_AUDIO_FORMATS = [
   { ext: 'mp3', label: 'MP3 (MPEG-3)', audioCodec: 'libmp3lame', defaultBitrate: '320k', desc: 'Universal audio standard with maximum 320 kbps fidelity' },
-  { ext: 'aac', label: 'AAC (M4A)', audioCodec: 'aac', defaultBitrate: '256k', desc: 'High-efficiency streaming standard for Apple & modern web' },
-  { ext: 'wav', label: 'WAV (PCM)', audioCodec: 'pcm_s16le', defaultBitrate: 'uncompressed', desc: 'Studio uncompressed master recording' },
-  { ext: 'flac', label: 'FLAC Lossless', audioCodec: 'flac', defaultBitrate: 'lossless', desc: 'Lossless audio compression with zero acoustic compromise' },
+  { ext: 'wav', label: 'WAV (Studio PCM)', audioCodec: 'pcm_s16le', defaultBitrate: 'uncompressed', desc: 'Uncompressed studio master PCM recording' },
+  { ext: 'aac', label: 'AAC (Apple Audio)', audioCodec: 'aac', defaultBitrate: '256k', desc: 'High-efficiency streaming standard for modern web and mobile' },
+  { ext: 'flac', label: 'FLAC Lossless', audioCodec: 'flac', defaultBitrate: 'lossless', desc: 'Bit-perfect lossless compression with zero acoustic compromise' },
   { ext: 'opus', label: 'OGG OPUS', audioCodec: 'libopus', defaultBitrate: '128k', desc: 'State-of-the-art codec with incredible clarity at low bitrates' },
+  { ext: 'ogg', label: 'OGG Vorbis', audioCodec: 'libvorbis', defaultBitrate: '192k', desc: 'Open-source lossy audio format with rich sound dynamics' },
+  { ext: 'm4a', label: 'M4A (AAC / ALAC)', audioCodec: 'aac', defaultBitrate: '256k', desc: 'Native Apple container for iOS and macOS music ecosystems' },
 ];

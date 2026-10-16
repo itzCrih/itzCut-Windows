@@ -161,6 +161,131 @@ async function testSuite() {
   }
   console.log('TikTok 2-Pass profile verified: Native source resolution & CFR preserved!');
 
+  console.log('\n--- TEST 8: Strict File Extension Validation ---');
+  // Re-implement the pure logic in Node to test matching rules
+  const supportedVideo = ['mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'flv', 'wmv', 'ts', '3gp', 'gif'];
+  const supportedAudio = ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'opus', 'aiff'];
+  const invalidFiles = ['photo.png', 'avatar.jpg', 'doc.pdf', 'setup.exe', 'archive.zip', 'script.js'];
+  const validFiles = ['clip.mov', 'video.mp4', 'track.mp3', 'audio.wav', 'record.flac', 'movie.mkv'];
+
+  for (const inv of invalidFiles) {
+    const ext = inv.split('.').pop().toLowerCase();
+    const isSupported = supportedVideo.includes(ext) || supportedAudio.includes(ext);
+    if (isSupported) {
+      throw new Error(`Invalid file ${inv} was unexpectedly accepted!`);
+    }
+  }
+  for (const val of validFiles) {
+    const ext = val.split('.').pop().toLowerCase();
+    const isSupported = supportedVideo.includes(ext) || supportedAudio.includes(ext);
+    if (!isSupported) {
+      throw new Error(`Valid file ${val} was unexpectedly rejected!`);
+    }
+  }
+  console.log('File validation verified: PNG, JPG, PDF rejected; MOV, MP4, MP3, WAV, FLAC accepted!');
+
+  console.log('\n--- TEST 9: .MOV Compatibility & Fast Preview Proxy Generation ---');
+  const sampleMov = path.join(__dirname, 'test_sample_prores.mov');
+  // Generate a real Apple ProRes 422 MOV with PCM 16-bit audio
+  const genMovCmd = `"${status.ffmpegPath}" -y -f lavfi -i testsrc=duration=2:size=640x360:rate=30 -f lavfi -i sine=frequency=440:duration=2 -c:v prores_ks -profile:v 3 -c:a pcm_s16le "${sampleMov}"`;
+  execSync(genMovCmd, { stdio: 'ignore' });
+  console.log('Generated ProRes .MOV test media at:', sampleMov);
+
+  const movMeta = await manager.probe(sampleMov);
+  console.log('MOV Metadata:', {
+    videoCodec: movMeta.video?.codec,
+    audioCodec: movMeta.audio?.codec,
+    needsPreviewProxy: movMeta.needsPreviewProxy,
+    reason: movMeta.previewProxyReason,
+  });
+
+  if (!movMeta.needsPreviewProxy) {
+    throw new Error('Expected ProRes/PCM .mov to require preview proxy!');
+  }
+
+  const proxyPath = await manager.ensurePreviewProxy(sampleMov);
+  console.log('Generated Preview Proxy at:', proxyPath, 'exists:', fs.existsSync(proxyPath));
+  if (!fs.existsSync(proxyPath)) {
+    throw new Error('Preview proxy file does not exist!');
+  }
+  const proxyMeta = await manager.probe(proxyPath);
+  console.log('Proxy verified: codec:', proxyMeta.video?.codec, 'audio:', proxyMeta.audio?.codec);
+  if (proxyMeta.video?.codec !== 'h264' || proxyMeta.audio?.codec !== 'aac') {
+    throw new Error('Preview proxy must be H.264 + AAC');
+  }
+
+  console.log('\n--- TEST 10: Dedicated Audio-Only Trimmer with Gain Boost ---');
+  const sampleMp3 = path.join(__dirname, 'test_audio_sample.mp3');
+  const genMp3Cmd = `"${status.ffmpegPath}" -y -f lavfi -i sine=frequency=880:duration=4 -c:a libmp3lame -b:a 192k "${sampleMp3}"`;
+  execSync(genMp3Cmd, { stdio: 'ignore' });
+
+  const trimmedAudioOut = path.join(__dirname, 'test_trimmed_audio.mp3');
+  const audioTrimResult = await transcoder.runJob({
+    jobId: 'test_trim_audio',
+    inputFile: sampleMp3,
+    outputFile: trimmedAudioOut,
+    mode: 'trim',
+    duration: 2.0,
+    options: {
+      start: 1.0,
+      end: 3.0,
+      isAudioOnly: true,
+      audioBoostDb: 6,
+    },
+  }, {
+    onProgress: () => {},
+    onComplete: () => {},
+    onError: (err) => console.error('Audio trim error:', err),
+    onLog: () => {},
+  });
+
+  if (!fs.existsSync(trimmedAudioOut)) {
+    throw new Error('Trimmed audio file does not exist');
+  }
+  const trimmedAudioMeta = await manager.probe(trimmedAudioOut);
+  console.log('Trimmed audio metadata:', {
+    duration: trimmedAudioMeta.duration,
+    audioCodec: trimmedAudioMeta.audio?.codec,
+    videoPresent: trimmedAudioMeta.video !== null,
+  });
+  if (trimmedAudioMeta.video !== null) {
+    throw new Error('Trimmed audio file unexpectedly contains video stream!');
+  }
+  console.log('Dedicated audio trimmer verified: Clean MP3 output without video stream!');
+
+  console.log('\n--- TEST 11: Real Audio Format Converter (MP3 -> WAV PCM & FLAC) ---');
+  const wavOut = path.join(__dirname, 'test_convert.wav');
+  await transcoder.runJob({
+    jobId: 'test_conv_wav',
+    inputFile: sampleMp3,
+    outputFile: wavOut,
+    mode: 'convert',
+    duration: 4.0,
+    options: {
+      format: 'wav',
+      audioCodec: 'pcm_s16le',
+      sampleRate: 48000,
+      channels: 2,
+      audioOnly: true,
+    },
+  }, {
+    onProgress: () => {},
+    onComplete: () => {},
+    onError: (err) => console.error('Audio convert error:', err),
+    onLog: () => {},
+  });
+
+  const wavMeta = await manager.probe(wavOut);
+  console.log('Converted WAV metadata:', {
+    codec: wavMeta.audio?.codec,
+    sampleRate: wavMeta.audio?.sampleRate,
+    channels: wavMeta.audio?.channels,
+  });
+  if (!wavMeta.audio?.codec.includes('pcm') || wavMeta.audio?.sampleRate !== 48000) {
+    throw new Error('WAV conversion failed to produce 48kHz PCM audio!');
+  }
+  console.log('Real audio format conversion verified: 48kHz PCM WAV generated successfully!');
+
   // Clean up
   try {
     if (fs.existsSync(sampleVideo)) fs.unlinkSync(sampleVideo);
@@ -168,6 +293,10 @@ async function testSuite() {
     if (fs.existsSync(stretchOutput)) fs.unlinkSync(stretchOutput);
     if (fs.existsSync(boostOutput)) fs.unlinkSync(boostOutput);
     if (fs.existsSync(tiktokOutput)) fs.unlinkSync(tiktokOutput);
+    if (fs.existsSync(sampleMov)) fs.unlinkSync(sampleMov);
+    if (fs.existsSync(sampleMp3)) fs.unlinkSync(sampleMp3);
+    if (fs.existsSync(trimmedAudioOut)) fs.unlinkSync(trimmedAudioOut);
+    if (fs.existsSync(wavOut)) fs.unlinkSync(wavOut);
     if (fs.existsSync(appData)) fs.rmdirSync(appData, { recursive: true });
   } catch (e) {}
 

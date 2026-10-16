@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
 import { UploadCloud, FileVideo, Music, X, RefreshCw } from 'lucide-react';
 import { formatBytes, formatSeconds } from '../utils/formatters';
+import { validateMediaFile, SUPPORTED_VIDEO_EXTS, SUPPORTED_AUDIO_EXTS } from '../utils/fileTypes';
 
-export default function DropZone({ currentFile, mediaInfo, onFileSelected, onFileCleared, isAudioOnly = false }) {
+export default function DropZone({
+  currentFile,
+  mediaInfo,
+  onFileSelected,
+  onFileCleared,
+  isAudioOnly = false,
+  onShowToast = null,
+}) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleBrowse = async () => {
@@ -11,15 +19,22 @@ export default function DropZone({ currentFile, mediaInfo, onFileSelected, onFil
       const file = await window.itzCutAPI.openFileDialog({
         filters: isAudioOnly
           ? [
-              { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'opus'] },
-              { name: 'All Files', extensions: ['*'] },
+              { name: 'Audio Files', extensions: SUPPORTED_AUDIO_EXTS },
             ]
           : [
-              { name: 'Video & Audio Files', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'flv', 'wmv', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'gif'] },
-              { name: 'All Files', extensions: ['*'] },
+              { name: 'Video & Audio Files', extensions: [...SUPPORTED_VIDEO_EXTS, ...SUPPORTED_AUDIO_EXTS] },
+              { name: 'Video Files', extensions: SUPPORTED_VIDEO_EXTS },
+              { name: 'Audio Files', extensions: SUPPORTED_AUDIO_EXTS },
             ],
       });
       if (file) {
+        const validation = validateMediaFile(file);
+        if (!validation.valid) {
+          if (onShowToast) {
+            onShowToast(validation.error, 'error');
+          }
+          return;
+        }
         onFileSelected(file);
       }
     } catch (err) {
@@ -53,11 +68,20 @@ export default function DropZone({ currentFile, mediaInfo, onFileSelected, onFil
         filePath = droppedFile.path;
       }
 
+      const ext = droppedFile.name.split('.').pop().toLowerCase();
+      const validation = validateMediaFile({ name: droppedFile.name, path: filePath, ext });
+      if (!validation.valid) {
+        if (onShowToast) {
+          onShowToast(validation.error, 'error');
+        }
+        return;
+      }
+
       onFileSelected({
         path: filePath,
         name: droppedFile.name,
         size: droppedFile.size,
-        ext: droppedFile.name.split('.').pop().toLowerCase(),
+        ext,
       });
     }
   };

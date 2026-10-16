@@ -30,12 +30,9 @@ async function publishRelease() {
 - **Trimmer Audio Dedicato con Waveform:** Se viene importato un file audio (.mp3, .wav, .flac, .aac, .ogg, .m4a), l'app attiva un lettore waveform ad onda sonora interattivo in tempo reale con selettori In/Out e Gain Boost.
 - **Convertitore Audio Reale:** Esportazione audio fedele con profili dedicati (MP3 VBR High, WAV PCM 48kHz, FLAC lossless, AAC, OGG Vorbis, Opus).
 - **Auto-Updater Integrato:** Controllo istantaneo all'avvio con download silenzioso degli aggiornamenti in background.
-- **Web Installer Leggero:** File di setup rapido \`itzCut-Setup.exe\` (~200 KB) perfetto per la condivisione su Discord e web.
-
-### Download
+### Download Ufficiali
 - **itzCut-Desktop-Setup-${version}.exe** — Installer NSIS completo per Windows (x64)
-- **itzCut-Desktop-${version}-Portable.exe** — Versione portatile standalone
-- **itzCut-Setup.exe** — Web Installer ultraleggero (~200 KB)`;
+- **itzCut-Desktop-${version}-Portable.exe** — Versione portatile standalone (x64)`;
 
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -79,8 +76,12 @@ async function publishRelease() {
     if (!createRes.ok) {
       throw new Error(`Failed to create release: ${createRes.status} ${await createRes.text()}`);
     }
-    release = await createRes.json();
     console.log(`Created release id: ${release.id}`);
+  }
+
+  if (process.argv.includes('--notes-only')) {
+    console.log(`Release notes for ${tag} updated successfully (--notes-only mode).`);
+    return;
   }
 
   const existingAssets = release.assets || [];

@@ -514,6 +514,43 @@ class Transcoder {
         return args;
       }
 
+      // Dedicated Audio-Only Trimming
+      if (options.isAudioOnly) {
+        args.push('-vn');
+        const aFilters = [];
+        if (speed !== 1) aFilters.push(`atempo=${speed}`);
+        if (boostVal > 0) aFilters.push(`volume=${boostVal}dB`);
+        if (loudnorm) aFilters.push('loudnorm=I=-16:TP=-1.5:LRA=11');
+
+        if (aFilters.length > 0) {
+          args.push('-af', aFilters.join(','));
+        }
+
+        const outExt = path.extname(outputFile).toLowerCase();
+        if (outExt === '.mp3') {
+          args.push('-c:a', 'libmp3lame', '-b:a', '320k');
+        } else if (outExt === '.wav') {
+          args.push('-c:a', 'pcm_s16le');
+        } else if (outExt === '.flac') {
+          args.push('-c:a', 'flac');
+        } else if (outExt === '.aac' || outExt === '.m4a') {
+          args.push('-c:a', 'aac', '-b:a', '256k');
+        } else if (outExt === '.opus' || outExt === '.ogg') {
+          args.push('-c:a', 'libopus', '-b:a', '160k');
+        } else {
+          args.push('-c:a', 'aac', '-b:a', '192k');
+        }
+
+        if (options.stripMetadata) {
+          args.push('-map_metadata', '-1');
+        } else {
+          args.push('-metadata', 'comment=Encoded by cut.itzcrih.it');
+        }
+
+        args.push(outputFile);
+        return args;
+      }
+
       if (exportAsGif) {
         args.push('-filter_complex', `[0:v] fps=${gifFps},scale=480:-1:flags=lanczos,split [a][b];[a] palettegen [p];[b][p] paletteuse`);
         args.push(outputFile);
@@ -725,11 +762,29 @@ class Transcoder {
         if (boostVal > 0 && audioCodec !== 'copy') {
           args.push('-af', `volume=${boostVal}dB`);
         }
+        if (options.sampleRate) {
+          args.push('-ar', options.sampleRate.toString());
+        }
+        if (options.channels) {
+          args.push('-ac', options.channels.toString());
+        }
+
         if (audioCodec === 'copy') {
           args.push('-c:a', 'copy');
         } else {
-          args.push('-c:a', audioCodec);
-          if (audioBitrate) args.push('-b:a', audioBitrate);
+          let resolvedCodec = audioCodec;
+          const outExt = path.extname(outputFile).toLowerCase();
+          if (resolvedCodec === 'mp3' || outExt === '.mp3') resolvedCodec = 'libmp3lame';
+          else if (resolvedCodec === 'wav' || outExt === '.wav') resolvedCodec = 'pcm_s16le';
+          else if (resolvedCodec === 'flac' || outExt === '.flac') resolvedCodec = 'flac';
+          else if (resolvedCodec === 'opus' || outExt === '.opus') resolvedCodec = 'libopus';
+          else if (resolvedCodec === 'ogg' || outExt === '.ogg') resolvedCodec = 'libvorbis';
+          else if (resolvedCodec === 'm4a' || resolvedCodec === 'aac' || outExt === '.m4a' || outExt === '.aac') resolvedCodec = 'aac';
+
+          args.push('-c:a', resolvedCodec);
+          if (audioBitrate && resolvedCodec !== 'pcm_s16le' && resolvedCodec !== 'flac') {
+            args.push('-b:a', audioBitrate);
+          }
         }
       } else {
         if (format === 'gif') {

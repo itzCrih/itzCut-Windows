@@ -7,6 +7,7 @@ import {
   RotateCcw,
   RotateCw,
   Scissors,
+  RefreshCw,
 } from 'lucide-react';
 import { formatTimecode, formatSeconds } from '../utils/formatters';
 
@@ -23,6 +24,7 @@ export default function MediaPreview({
   canvasFit = 'pad', // 'pad', 'crop', 'stretch'
   audioBoostDb = 0, // In preview
   speed = 1, // Playback rate in preview
+  mediaInfo = null,
 }) {
   const videoRef = useRef(null);
   const trackRef = useRef(null);
@@ -33,6 +35,11 @@ export default function MediaPreview({
   const [videoDuration, setVideoDuration] = useState(duration);
   const [naturalDimensions, setNaturalDimensions] = useState({ width: 1920, height: 1080 });
 
+  // Proxy state for ProRes, PCM, HEVC, and non-native web video containers
+  const [proxyPath, setProxyPath] = useState(null);
+  const [isGeneratingProxy, setIsGeneratingProxy] = useState(false);
+  const [proxyError, setProxyError] = useState(null);
+
   // Web Audio Gain Boost Nodes for live audio preview
   const audioCtxRef = useRef(null);
   const gainNodeRef = useRef(null);
@@ -42,6 +49,41 @@ export default function MediaPreview({
   const [activeDrag, setActiveDrag] = useState(null);
   const wasPlayingBeforeDragRef = useRef(false);
   const rafSeekRef = useRef(null);
+
+  // Reset proxy state on file change
+  useEffect(() => {
+    setProxyPath(null);
+    setIsGeneratingProxy(false);
+    setProxyError(null);
+  }, [filePath]);
+
+  // Request high-speed preview proxy when needed
+  const requestProxy = useCallback(async () => {
+    if (!filePath || isGeneratingProxy || proxyPath) return;
+    if (!window.itzCutAPI?.getPreviewProxy) return;
+
+    setIsGeneratingProxy(true);
+    setProxyError(null);
+    try {
+      const pPath = await window.itzCutAPI.getPreviewProxy(filePath);
+      if (pPath) {
+        setProxyPath(pPath);
+      }
+    } catch (err) {
+      console.warn('Failed to generate preview proxy:', err);
+      setProxyError(err.message);
+    } finally {
+      setIsGeneratingProxy(false);
+    }
+  }, [filePath, isGeneratingProxy, proxyPath]);
+
+  // Auto-trigger proxy if file metadata explicitly flags incompatible codecs/container
+  useEffect(() => {
+    if (mediaInfo?.needsPreviewProxy && !proxyPath && !isGeneratingProxy) {
+      requestProxy();
+    }
+  }, [mediaInfo, proxyPath, isGeneratingProxy, requestProxy]);
+
 
   useEffect(() => {
     if (duration > 0) setVideoDuration(duration);
@@ -305,8 +347,9 @@ export default function MediaPreview({
     };
   }
 
-  // Fallback direct URL or safe custom protocol
-  const safeVideoUrl = filePath ? `itzcut-media://local/${encodeURIComponent(filePath)}` : '';
+  // Use fast preview proxy path if generated, otherwise direct file path
+  const effectivePreviewPath = proxyPath || filePath;
+  const safeVideoUrl = effectivePreviewPath ? `itzcut-media://local/${encodeURIComponent(effectivePreviewPath)}` : '';
 
   return (
     <div className="player-container">
@@ -325,6 +368,18 @@ export default function MediaPreview({
             position: 'relative',
           }}
         >
+          {isGeneratingProxy && (
+            <div className="preview-loading-overlay">
+              <RefreshCw size={28} className="spin" style={{ color: 'var(--gold-primary)' }} />
+              <div style={{ fontWeight: 600, fontSize: '13.5px' }}>
+                Preparing Ultra-Fast Smooth Preview...
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Optimizing video decoder for master codec stream
+              </div>
+            </div>
+          )}
+
           <video
             ref={videoRef}
             src={safeVideoUrl}
@@ -360,6 +415,9 @@ export default function MediaPreview({
                 error: videoRef.current?.error?.message || videoRef.current?.error?.code,
                 src: safeVideoUrl,
               });
+              if (!proxyPath && !isGeneratingProxy) {
+                requestProxy();
+              }
             }}
             onEnded={() => {
               setIsPlaying(false);

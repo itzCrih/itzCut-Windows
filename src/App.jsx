@@ -7,6 +7,7 @@ import TrimmerTab from './tabs/TrimmerTab';
 import QueueTab from './tabs/QueueTab';
 import SettingsTab from './tabs/SettingsTab';
 import { playCompletionChime } from './utils/sound';
+import { validateMediaFile } from './utils/fileTypes';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('convert');
@@ -28,8 +29,8 @@ export default function App() {
 
   const [updateState, setUpdateState] = useState({
     status: 'idle',
-    currentVersion: '2.0.0',
-    latestVersion: '2.0.0',
+    currentVersion: '2.1.0',
+    latestVersion: '2.1.0',
     downloadPercent: 0,
     error: null,
   });
@@ -204,12 +205,19 @@ export default function App() {
     showToast('Application reset to Home', 'info');
   };
 
-  // When a file is selected, probe its metadata
+  // When a file is selected, validate format and probe its metadata
   const handleFileSelected = async (file) => {
     if (!file || !file.path) {
       showToast('Could not resolve file path. Please use the Browse button to select this file.', 'error');
       return;
     }
+
+    const validation = validateMediaFile(file);
+    if (!validation.valid) {
+      showToast(validation.error, 'error');
+      return;
+    }
+
     setCurrentFile(file);
     setMediaInfo(null);
     if (!window.itzCutAPI) return;
@@ -217,13 +225,14 @@ export default function App() {
     try {
       const probeData = await window.itzCutAPI.probeFile(file.path);
       setMediaInfo(probeData);
-      showToast(`Loaded file: ${file.name}`, 'info');
+      showToast(`Loaded ${validation.category}: ${file.name}`, 'info');
     } catch (err) {
       console.warn('Probe error:', err);
       setMediaInfo({
         duration: 0,
         size: file.size,
-        video: { width: 1920, height: 1080, fps: 30, codec: file.ext },
+        video: validation.category === 'video' ? { width: 1920, height: 1080, fps: 30, codec: file.ext } : null,
+        audio: validation.category === 'audio' ? { codec: file.ext, channels: 2, sampleRate: 44100 } : null,
       });
     }
   };
@@ -382,7 +391,7 @@ export default function App() {
           </div>
 
           <div>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>itzCut Desktop v2.0.0</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>itzCut Desktop v2.1.0</span>
           </div>
         </footer>
       </div>

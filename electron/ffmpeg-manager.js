@@ -5,6 +5,7 @@ const https = require('https');
 const http = require('http');
 const AdmZip = require('adm-zip');
 const os = require('os');
+const crypto = require('crypto');
 
 class FFmpegManager {
   constructor(appDataPath) {
@@ -199,12 +200,41 @@ class FFmpegManager {
             }
           }
 
+          const fileExt = path.extname(filePath).toLowerCase();
+          const vCodec = videoStream ? (videoStream.codec_name || '').toLowerCase() : '';
+          const aCodec = audioStream ? (audioStream.codec_name || '').toLowerCase() : '';
+
+          const webVideoCodecs = ['h264', 'vp8', 'vp9', 'av1'];
+          const webAudioCodecs = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
+          const nonWebContainers = ['.avi', '.wmv', '.flv', '.ts', '.m2ts', '.mts', '.3gp', '.vob', '.mpg', '.mpeg'];
+
+          let needsPreviewProxy = false;
+          let previewProxyReason = '';
+
+          if (videoStream) {
+            if (nonWebContainers.includes(fileExt)) {
+              needsPreviewProxy = true;
+              previewProxyReason = `Container ${fileExt.toUpperCase()} requires fast preview proxy`;
+            } else if (vCodec && !webVideoCodecs.includes(vCodec)) {
+              needsPreviewProxy = true;
+              previewProxyReason = `Video codec ${vCodec.toUpperCase()} requires fast preview proxy`;
+            } else if (aCodec && !webAudioCodecs.includes(aCodec)) {
+              needsPreviewProxy = true;
+              previewProxyReason = `Audio codec ${aCodec.toUpperCase()} requires fast preview proxy`;
+            } else if (fileExt === '.mkv' && vCodec !== 'vp8' && vCodec !== 'vp9' && vCodec !== 'av1') {
+              needsPreviewProxy = true;
+              previewProxyReason = 'MKV container requires fast preview proxy';
+            }
+          }
+
           const result = {
             duration: parseFloat(format.duration || 0),
             size: parseInt(format.size || 0, 10),
             bitRate: parseInt(format.bit_rate || 0, 10),
             formatName: format.format_name,
             formatLongName: format.format_long_name,
+            needsPreviewProxy,
+            previewProxyReason,
             video: videoStream
               ? {
                   codec: videoStream.codec_name,
@@ -235,6 +265,70 @@ class FFmpegManager {
         } catch (err) {
           reject(new Error(`Failed to parse media metadata: ${err.message}`));
         }
+      });
+    });
+  }
+
+  async ensurePreviewProxy(filePath) {
+    if (!filePath || !fs.existsSync(filePath)) {
+      throw new Error('File does not exist: ' + filePath);
+    }
+
+    if (!this.ffmpegPath) {
+      await this.detect();
+    }
+    if (!this.ffmpegPath) {
+      throw new Error('FFmpeg not available to generate preview proxy');
+    }
+
+    const proxyDir = path.join(os.tmpdir(), 'itzcut_previews');
+    if (!fs.existsSync(proxyDir)) {
+      fs.mkdirSync(proxyDir, { recursive: true });
+    }
+
+    const stat = fs.statSync(filePath);
+    const hash = crypto.createHash('md5').update(`${filePath}_${stat.mtimeMs}_${stat.size}`).digest('hex');
+    const proxyPath = path.join(proxyDir, `proxy_${hash}.mp4`);
+
+    if (fs.existsSync(proxyPath) && fs.statSync(proxyPath).size > 1024) {
+      return proxyPath;
+    }
+
+    // Generate fast, lightweight 720p H.264 proxy with fastdecode & faststart
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-y',
+        '-hide_banner',
+        '-threads', '0',
+        '-i', filePath,
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-tune', 'fastdecode',
+        '-crf', '26',
+        '-vf', 'scale=trunc(min(1280\\,iw)/2)*2:trunc(min(720\\,ih)/2)*2,format=yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        proxyPath,
+      ];
+
+      const proc = spawn(this.ffmpegPath, args);
+      let stderr = '';
+
+      proc.stderr.on('data', (d) => {
+        stderr += d.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(proxyPath)) {
+          resolve(proxyPath);
+        } else {
+          reject(new Error(`Failed to generate preview proxy (code ${code}): ${stderr.slice(-300)}`));
+        }
+      });
+
+      proc.on('error', (err) => {
+        reject(err);
       });
     });
   }

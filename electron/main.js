@@ -128,15 +128,24 @@ app.whenReady().then(async () => {
 
       const mimeTypes = {
         '.mp4': 'video/mp4',
+        '.m4v': 'video/mp4',
         '.webm': 'video/webm',
-        '.mkv': 'video/x-matroska',
-        '.mov': 'video/quicktime',
+        '.mkv': 'video/mp4',
+        '.mov': 'video/mp4',
         '.avi': 'video/x-msvideo',
+        '.wmv': 'video/x-ms-wmv',
+        '.flv': 'video/x-flv',
+        '.ts': 'video/mp2t',
         '.mp3': 'audio/mpeg',
         '.wav': 'audio/wav',
         '.aac': 'audio/aac',
         '.flac': 'audio/flac',
         '.ogg': 'audio/ogg',
+        '.opus': 'audio/ogg',
+        '.m4a': 'audio/mp4',
+        '.wma': 'audio/x-ms-wma',
+        '.aiff': 'audio/aiff',
+        '.aif': 'audio/aiff',
       };
       const ext = path.extname(decodedPath).toLowerCase();
       const contentType = mimeTypes[ext] || 'video/mp4';
@@ -231,13 +240,11 @@ ipcMain.handle('shell:openExternal', async (event, targetUrl) => {
   return false;
 });
 
-// IPC: Shell & Dialogs
 ipcMain.handle('dialog:openFile', async (event, options = {}) => {
   const defaultFilters = [
-    { name: 'Media Files', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'flv', 'wmv', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'gif'] },
-    { name: 'Video Files', extensions: ['mp4', 'mkv', 'mov', 'webm', 'avi', 'flv', 'wmv', 'ts', 'm4v'] },
-    { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'opus', 'wma'] },
-    { name: 'All Files', extensions: ['*'] },
+    { name: 'Media Files', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'flv', 'wmv', 'm4v', 'ts', '3gp', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'opus', 'wma', 'aiff', 'gif'] },
+    { name: 'Video Files', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'flv', 'wmv', 'm4v', 'ts', '3gp', 'gif'] },
+    { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'opus', 'wma', 'aiff'] },
   ];
 
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -315,6 +322,16 @@ ipcMain.handle('media:probe', async (event, filePath) => {
     throw new Error(err.message);
   }
 });
+
+// IPC: Preview Proxy Generator for Non-Native Formats (ProRes, PCM, HEVC, MKV, AVI, etc.)
+ipcMain.handle('media:getPreviewProxy', async (event, filePath) => {
+  try {
+    return await ffmpegManager.ensurePreviewProxy(filePath);
+  } catch (err) {
+    throw new Error(err.message);
+  }
+});
+
 
 // IPC: FFmpeg Status & Downloader
 ipcMain.handle('ffmpeg:getStatus', async () => {

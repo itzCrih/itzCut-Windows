@@ -85,6 +85,7 @@ export default function CompressorTab({
         mediaInfo={mediaInfo}
         onFileSelected={onFileSelected}
         onFileCleared={onFileCleared}
+        onShowToast={onShowToast}
       />
 
       {currentFile && (

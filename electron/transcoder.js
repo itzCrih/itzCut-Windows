@@ -78,6 +78,49 @@ class Transcoder {
     return { encoder: 'libx264', isHardware: false };
   }
 
+  parseResolution(resolution, customResolution = null) {
+    if (!resolution || resolution === 'original') return null;
+
+    const resMap = {
+      '4k': { w: 3840, h: 2160, dar: '16/9' },
+      '1440p': { w: 2560, h: 1440, dar: '16/9' },
+      '1080p': { w: 1920, h: 1080, dar: '16/9' },
+      '720p': { w: 1280, h: 720, dar: '16/9' },
+      '480p': { w: 854, h: 480, dar: '16/9' },
+      '360p': { w: 640, h: 360, dar: '16/9' },
+    };
+
+    if (resMap[resolution]) {
+      return resMap[resolution];
+    }
+
+    const raw = (resolution === 'custom' ? (customResolution || '') : resolution).toString().trim();
+    const match = raw.match(/(\d{2,5})\s*[*xX:\-,\s]\s*(\d{2,5})/);
+    if (match) {
+      let w = parseInt(match[1], 10);
+      let h = parseInt(match[2], 10);
+      if (w > 0 && h > 0) {
+        // Enforce even dimensions for H.264 / NVENC / HEVC encoder compatibility
+        if (w % 2 !== 0) w -= 1;
+        if (h % 2 !== 0) h -= 1;
+        return { w, h, dar: `${w}/${h}` };
+      }
+    }
+
+    return null;
+  }
+
+  buildScaleFilter(targetRes, canvasFit = 'pad') {
+    if (!targetRes) return null;
+    if (canvasFit === 'stretch') {
+      return `scale=${targetRes.w}:${targetRes.h},setsar=1:1,setdar=${targetRes.dar}`;
+    } else if (canvasFit === 'crop') {
+      return `scale=${targetRes.w}:${targetRes.h}:force_original_aspect_ratio=increase,crop=${targetRes.w}:${targetRes.h},setsar=1:1,setdar=${targetRes.dar}`;
+    } else {
+      return `scale=${targetRes.w}:${targetRes.h}:force_original_aspect_ratio=decrease,pad=${targetRes.w}:${targetRes.h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1:1,setdar=${targetRes.dar}`;
+    }
+  }
+
   async runJob(jobConfig, callbacks, isRetrySoftware = false) {
     const { onProgress, onComplete, onError, onLog } = callbacks;
     const { jobId, outputFile, duration = 0, options = {} } = jobConfig;
@@ -723,7 +766,20 @@ class Transcoder {
           if (boostVal > 0) {
             args.push('-af', `volume=${boostVal}dB`);
           }
-          args.push('-c:a', 'aac', '-b:a', '160k');
+        }
+      }
+
+      if (type !== 'tiktok') {
+        const compressFilters = [];
+        const targetRes = this.parseResolution(options.resolution, options.customResolution);
+        if (targetRes) {
+          compressFilters.push(this.buildScaleFilter(targetRes, options.canvasFit || 'pad'));
+        }
+        if (options.fps && options.fps !== 'original') {
+          compressFilters.push(`fps=${options.fps}`);
+        }
+        if (compressFilters.length > 0) {
+          args.push('-vf', compressFilters.join(','));
         }
       }
 
@@ -815,25 +871,9 @@ class Transcoder {
           }
 
           const videoFilters = [];
-          if (resolution !== 'original') {
-            const resMap = {
-              '4k': { w: 3840, h: 2160, dar: '16/9' },
-              '1440p': { w: 2560, h: 1440, dar: '16/9' },
-              '1080p': { w: 1920, h: 1080, dar: '16/9' },
-              '720p': { w: 1280, h: 720, dar: '16/9' },
-              '480p': { w: 854, h: 480, dar: '16/9' },
-              '360p': { w: 640, h: 360, dar: '16/9' },
-            };
-            const targetRes = resMap[resolution];
-            if (targetRes) {
-              if (canvasFit === 'stretch') {
-                videoFilters.push(`scale=${targetRes.w}:${targetRes.h},setsar=1:1,setdar=${targetRes.dar}`);
-              } else if (canvasFit === 'crop') {
-                videoFilters.push(`scale=${targetRes.w}:${targetRes.h}:force_original_aspect_ratio=increase,crop=${targetRes.w}:${targetRes.h},setsar=1:1,setdar=${targetRes.dar}`);
-              } else {
-                videoFilters.push(`scale=${targetRes.w}:${targetRes.h}:force_original_aspect_ratio=decrease,pad=${targetRes.w}:${targetRes.h}:(ow-iw)/2:(oh-ih)/2:black,setsar=1:1,setdar=${targetRes.dar}`);
-              }
-            }
+          const targetRes = this.parseResolution(resolution, options.customResolution);
+          if (targetRes) {
+            videoFilters.push(this.buildScaleFilter(targetRes, canvasFit));
           }
 
           if (fps !== 'original') {

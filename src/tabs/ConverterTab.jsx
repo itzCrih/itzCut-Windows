@@ -47,6 +47,8 @@ export default function ConverterTab({
   const [crf, setCrf] = useState(23);
   const [speedPreset, setSpeedPreset] = useState('medium');
   const [resolution, setResolution] = useState('original');
+  const [customResolution, setCustomResolution] = useState('');
+  const [canvasFit, setCanvasFit] = useState('pad');
   const [fps, setFps] = useState('original');
   const [audioBitrate, setAudioBitrate] = useState('192k');
   const [audioSampleRate, setAudioSampleRate] = useState('original');
@@ -116,6 +118,16 @@ export default function ConverterTab({
     let jobOptions = {};
     let jobTitle = 'Processing';
 
+    let cleanCustomRes = '';
+    if (!isAudioOnly && resolution === 'custom') {
+      const match = (customResolution || '').trim().match(/(\d{2,5})\s*[*xX:\-,\s]\s*(\d{2,5})/);
+      if (!match) {
+        onShowToast('Please enter a valid resolution in WIDTHxHEIGHT format (e.g. 1920x1080)', 'error');
+        return;
+      }
+      cleanCustomRes = `${match[1]}x${match[2]}`;
+    }
+
     if (isAudioOnly) {
       const fmtConfig = CONVERTER_AUDIO_FORMATS.find((f) => f.ext === selectedFormat) || CONVERTER_AUDIO_FORMATS[0];
       outExt = fmtConfig.ext;
@@ -148,11 +160,16 @@ export default function ConverterTab({
     } else if (activeWorkflow === 'target_size') {
       outExt = 'mp4';
       jobMode = 'compress';
-      jobTitle = `Target Size Compression (${customTargetMB} MB)`;
+      const resLabel = resolution === 'custom' ? ` - ${cleanCustomRes}` : (resolution !== 'original' ? ` - ${resolution.toUpperCase()}` : '');
+      jobTitle = `Target Size Compression (${customTargetMB} MB${resLabel})`;
       jobOptions = {
         type: 'target_size',
         targetSizeMB: customTargetMB,
         preset: speedPreset,
+        resolution,
+        customResolution: cleanCustomRes,
+        canvasFit,
+        fps,
         muteAudio,
         audioBoostDb: parseInt(audioBoostDb, 10) || 0,
         stripMetadata,
@@ -160,11 +177,16 @@ export default function ConverterTab({
     } else if (activeWorkflow === 'crf') {
       outExt = 'mp4';
       jobMode = 'compress';
-      jobTitle = `CRF ${crf} Optimization`;
+      const resLabel = resolution === 'custom' ? ` (${cleanCustomRes})` : (resolution !== 'original' ? ` (${resolution.toUpperCase()})` : '');
+      jobTitle = `CRF ${crf} Optimization${resLabel}`;
       jobOptions = {
         type: 'crf',
         crf: parseInt(crf, 10),
         preset: speedPreset,
+        resolution,
+        customResolution: cleanCustomRes,
+        canvasFit,
+        fps,
         muteAudio,
         audioBoostDb: parseInt(audioBoostDb, 10) || 0,
         stripMetadata,
@@ -174,12 +196,15 @@ export default function ConverterTab({
       const fmtConfig = formats.find((f) => f.ext === selectedFormat) || formats[0];
       outExt = selectedFormat === 'mp4-hevc' ? 'mp4' : selectedFormat;
       jobMode = 'convert';
-      jobTitle = `Convert to ${fmtConfig.label}`;
+      const resLabel = resolution === 'custom' ? ` (${cleanCustomRes})` : (resolution !== 'original' ? ` (${resolution.toUpperCase()})` : '');
+      jobTitle = `Convert to ${fmtConfig.label}${resLabel}`;
       jobOptions = {
         format: selectedFormat,
         videoCodec: fmtConfig.defaultCodec || 'libx264',
         audioCodec: muteAudio ? 'none' : 'aac',
         resolution,
+        customResolution: cleanCustomRes,
+        canvasFit,
         fps,
         crf: parseInt(crf, 10),
         audioBitrate,
@@ -601,38 +626,115 @@ export default function ConverterTab({
             ) : (
               <>
                 {/* Resolution & FPS */}
-                {activeWorkflow !== 'target_size' && selectedPresetId !== 'tiktok' && (
-                  <div className="grid-2">
-                    <div className="form-group">
-                      <label className="form-label">Resolution</label>
-                      <select
-                        className="form-select"
-                        value={resolution}
-                        onChange={(e) => setResolution(e.target.value)}
-                      >
-                        <option value="original">Original ({mediaInfo?.video?.width || 'Auto'}p)</option>
-                        <option value="4k">4K Ultra HD (3840×2160)</option>
-                        <option value="1440p">2K QHD (2560×1440)</option>
-                        <option value="1080p">Full HD (1920×1080)</option>
-                        <option value="720p">HD (1280×720)</option>
-                        <option value="480p">SD (854×480)</option>
-                      </select>
+                {selectedPresetId !== 'tiktok' && (
+                  <>
+                    <div className="grid-2">
+                      <div className="form-group">
+                        <label className="form-label">
+                          <span>Resolution</span>
+                          {resolution === 'custom' && (
+                            <span className="form-label-tag">Custom</span>
+                          )}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={resolution}
+                          onChange={(e) => setResolution(e.target.value)}
+                        >
+                          <option value="original">Original ({mediaInfo?.video?.width ? `${mediaInfo.video.width}×${mediaInfo.video.height || ''}` : 'Auto'})</option>
+                          <option value="4k">4K Ultra HD (3840×2160)</option>
+                          <option value="1440p">2K QHD (2560×1440)</option>
+                          <option value="1080p">Full HD (1920×1080)</option>
+                          <option value="720p">HD (1280×720)</option>
+                          <option value="480p">SD (854×480)</option>
+                          <option value="custom">Custom resolution...</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Framerate (FPS)</label>
+                        <select
+                          className="form-select"
+                          value={fps}
+                          onChange={(e) => setFps(e.target.value)}
+                        >
+                          <option value="original">Original ({mediaInfo?.video?.fps || 'Auto'} fps)</option>
+                          <option value="60">60 FPS (Smooth)</option>
+                          <option value="30">30 FPS (Standard)</option>
+                          <option value="24">24 FPS (Cinematic)</option>
+                        </select>
+                      </div>
                     </div>
 
-                    <div className="form-group">
-                      <label className="form-label">Framerate (FPS)</label>
-                      <select
-                        className="form-select"
-                        value={fps}
-                        onChange={(e) => setFps(e.target.value)}
-                      >
-                        <option value="original">Original ({mediaInfo?.video?.fps || 'Auto'} fps)</option>
-                        <option value="60">60 FPS (Smooth)</option>
-                        <option value="30">30 FPS (Standard)</option>
-                        <option value="24">24 FPS (Cinematic)</option>
-                      </select>
-                    </div>
-                  </div>
+                    {/* Custom Resolution Text Input */}
+                    {resolution === 'custom' && (
+                      <div className="form-group" style={{ marginTop: '-4px' }}>
+                        <label className="form-label">
+                          <span>Custom Resolution</span>
+                          <span className="form-label-tag">Width × Height</span>
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="e.g. 1920x1080 or 1080x1920"
+                            value={customResolution}
+                            onChange={(e) => setCustomResolution(e.target.value)}
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ whiteSpace: 'nowrap', padding: '7px 11px', fontSize: '11.5px' }}
+                            onClick={() => setCustomResolution('1920x1080')}
+                            title="16:9 Landscape Full HD"
+                          >
+                            1920×1080
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ whiteSpace: 'nowrap', padding: '7px 11px', fontSize: '11.5px' }}
+                            onClick={() => setCustomResolution('1080x1920')}
+                            title="9:16 Vertical (TikTok / Reels / Shorts)"
+                          >
+                            1080×1920
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ whiteSpace: 'nowrap', padding: '7px 11px', fontSize: '11.5px' }}
+                            onClick={() => setCustomResolution('1080x1080')}
+                            title="1:1 Square"
+                          >
+                            1080×1080
+                          </button>
+                        </div>
+                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                          Enter custom resolution as <strong>Width×Height</strong> (e.g. 1920x1080, 1080x1920, 2560x1080).
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Scaling Fit Mode when Resolution is modified */}
+                    {resolution !== 'original' && (
+                      <div className="form-group" style={{ marginTop: '-4px' }}>
+                        <label className="form-label">
+                          <span>Scaling Fit Mode</span>
+                          <span className="form-label-tag">Aspect ratio handling</span>
+                        </label>
+                        <select
+                          className="form-select"
+                          value={canvasFit}
+                          onChange={(e) => setCanvasFit(e.target.value)}
+                        >
+                          <option value="pad">Fit with Black Bars (Preserve Aspect Ratio)</option>
+                          <option value="crop">Fill & Center Crop</option>
+                          <option value="stretch">Stretch to Fit</option>
+                        </select>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Encoder Speed */}

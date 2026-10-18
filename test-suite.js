@@ -284,7 +284,43 @@ async function testSuite() {
   if (!wavMeta.audio?.codec.includes('pcm') || wavMeta.audio?.sampleRate !== 48000) {
     throw new Error('WAV conversion failed to produce 48kHz PCM audio!');
   }
-  console.log('Real audio format conversion verified: 48kHz PCM WAV generated successfully!');
+  console.log('\n--- TEST 12: Custom Resolution Encoding & Probing ---');
+  const customResOut = path.join(__dirname, 'test_custom_res.mp4');
+  await transcoder.runJob({
+    jobId: 'test_12_custom',
+    inputFile: sampleVideo,
+    outputFile: customResOut,
+    mode: 'convert',
+    duration: 3,
+    options: {
+      format: 'mp4',
+      videoCodec: 'libx264',
+      audioCodec: 'aac',
+      resolution: 'custom',
+      customResolution: '1080x1920',
+      canvasFit: 'pad',
+      fps: '30',
+      crf: 23,
+    },
+  }, {
+    onProgress: () => {},
+    onComplete: () => {},
+    onError: (err) => console.error('Custom resolution encode error:', err),
+    onLog: () => {},
+  });
+
+  const customMeta = await manager.probe(customResOut);
+  console.log('Custom resolution output metadata:', {
+    width: customMeta.video?.width,
+    height: customMeta.video?.height,
+    fps: customMeta.video?.fps,
+    codec: customMeta.video?.codec,
+  });
+
+  if (customMeta.video?.width !== 1080 || customMeta.video?.height !== 1920) {
+    throw new Error(`Custom resolution failed: expected 1080x1920, got ${customMeta.video?.width}x${customMeta.video?.height}`);
+  }
+  console.log('Custom resolution verified: Genuine 1080x1920 output successfully generated!');
 
   // Clean up
   try {
@@ -297,6 +333,7 @@ async function testSuite() {
     if (fs.existsSync(sampleMp3)) fs.unlinkSync(sampleMp3);
     if (fs.existsSync(trimmedAudioOut)) fs.unlinkSync(trimmedAudioOut);
     if (fs.existsSync(wavOut)) fs.unlinkSync(wavOut);
+    if (fs.existsSync(customResOut)) fs.unlinkSync(customResOut);
     if (fs.existsSync(appData)) fs.rmdirSync(appData, { recursive: true });
   } catch (e) {}
 

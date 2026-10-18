@@ -1,6 +1,6 @@
 {
   "name": "itzcut-desktop",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "itzCut Desktop — Local Video & Audio Suite for Windows",
   "productName": "itzCut Desktop",
   "main": "electron/main.js",

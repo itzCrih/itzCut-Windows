@@ -27,12 +27,40 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow = null;
+let splashWindow = null;
 let ffmpegManager = null;
 let transcoder = null;
 let autoUpdater = null;
 
-function createWindow() {
-  const iconPath = path.join(__dirname, '../public/logo.png');
+function createSplashScreen() {
+  const iconPath = path.join(__dirname, 'assets/icon.ico');
+
+  splashWindow = new BrowserWindow({
+    width: 480,
+    height: 310,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    center: true,
+    alwaysOnTop: true,
+    show: true,
+    backgroundColor: '#00000000',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
+
+  splashWindow.on('closed', () => {
+    splashWindow = null;
+  });
+}
+
+function createWindow(onReady = null) {
+  const iconPath = path.join(__dirname, 'assets/icon.ico');
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -70,17 +98,20 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    if (onReady) {
+      onReady();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
 
-    // Initialize AutoUpdater with mainWindow
-    autoUpdater = new AutoUpdater(mainWindow);
-
-    // Automatically check for updates on startup after 3.5 seconds
-    setTimeout(() => {
-      if (autoUpdater) {
-        autoUpdater.checkForUpdates(false);
-      }
-    }, 3500);
+      // Initialize AutoUpdater with mainWindow
+      autoUpdater = new AutoUpdater(mainWindow);
+      setTimeout(() => {
+        if (autoUpdater) {
+          autoUpdater.checkForUpdates(false);
+        }
+      }, 3500);
+    }
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
@@ -112,6 +143,9 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  const splashStartTime = Date.now();
+  createSplashScreen();
+
   // Ultra-robust Range streaming protocol handler for smooth scrubbing and infinite play without freezing
   protocol.handle('itzcut-media', async (request) => {
     try {
@@ -191,9 +225,36 @@ app.whenReady().then(async () => {
   ffmpegManager = new FFmpegManager(appDataPath);
   transcoder = new Transcoder(ffmpegManager);
 
-  await ffmpegManager.detect();
+  // Run FFmpeg & hardware detection in background while splash is shown
+  const detectPromise = ffmpegManager.detect().catch((err) => {
+    console.error('FFmpeg detection error:', err);
+  });
 
-  createWindow();
+  createWindow(async () => {
+    await detectPromise;
+    const elapsed = Date.now() - splashStartTime;
+    const minSplashDuration = 1800; // 1.8s minimum for clean, polished splash experience
+    const remainingDelay = Math.max(0, minSplashDuration - elapsed);
+
+    setTimeout(() => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+
+      // Initialize AutoUpdater with mainWindow
+      autoUpdater = new AutoUpdater(mainWindow);
+      setTimeout(() => {
+        if (autoUpdater) {
+          autoUpdater.checkForUpdates(false);
+        }
+      }, 3500);
+    }, remainingDelay);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

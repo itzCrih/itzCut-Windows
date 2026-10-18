@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>itzCut Desktop</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      padding: 12px;
+    }
+
+    .splash-card {
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at 50% -10%, #171b26 0%, #07090e 80%);
+      border: 1px solid rgba(230, 180, 34, 0.4);
+      border-radius: 14px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.85), 0 0 24px rgba(230, 180, 34, 0.15);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 24px 28px 18px 28px;
+      color: #ffffff;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Top gold highlight line */
+    .splash-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 15%;
+      right: 15%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #e6b422, transparent);
+      opacity: 0.9;
+    }
+
+    .header-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .logo-container {
+      position: relative;
+      width: 64px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-glow {
+      position: absolute;
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: rgba(230, 180, 34, 0.35);
+      filter: blur(14px);
+      animation: pulseGlow 2.2s ease-in-out infinite alternate;
+    }
+
+    .logo-img {
+      width: 60px;
+      height: 60px;
+      object-fit: contain;
+      position: relative;
+      z-index: 1;
+      filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.7));
+      animation: logoFloat 3s ease-in-out infinite;
+    }
+
+    .title-group {
+      text-align: center;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .app-title {
+      font-size: 23px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      background: linear-gradient(135deg, #ffffff 65%, #e6b422 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .version-tag {
+      font-size: 11px;
+      font-weight: 700;
+      font-family: Consolas, "JetBrains Mono", monospace;
+      background: rgba(230, 180, 34, 0.15);
+      color: #e6b422;
+      border: 1px solid rgba(230, 180, 34, 0.45);
+      padding: 2px 7px;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+    }
+
+    .app-subtitle {
+      font-size: 12px;
+      color: #8b949e;
+      margin-top: 3px;
+      font-weight: 500;
+    }
+
+    .progress-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 99px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 15%;
+      background: linear-gradient(90deg, #d49a1a, #e6b422, #ffe066);
+      border-radius: 99px;
+      box-shadow: 0 0 10px rgba(230, 180, 34, 0.65);
+      transition: width 0.35s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .progress-bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+      animation: shimmer 1.4s infinite;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-family: Consolas, "JetBrains Mono", monospace;
+    }
+
+    .status-text {
+      color: #c9d1d9;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #e6b422;
+      box-shadow: 0 0 6px #e6b422;
+      animation: blink 1.2s ease-in-out infinite;
+    }
+
+    #percentText {
+      color: #8b949e;
+      font-weight: 600;
+    }
+
+    .footer-info {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10.5px;
+      color: #6e7681;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 8px;
+    }
+
+    .info-badge {
+      color: #8b949e;
+    }
+
+    @keyframes pulseGlow {
+      0% { transform: scale(0.9); opacity: 0.35; }
+      100% { transform: scale(1.25); opacity: 0.85; }
+    }
+
+    @keyframes logoFloat {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-3px); }
+    }
+
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash-card">
+    <div class="header-area">
+      <div class="logo-container">
+        <div class="logo-glow"></div>
+        <img class="logo-img" src="assets/logo.png" alt="itzCut Logo" />
+      </div>
+
+      <div class="title-group">
+        <div class="title-row">
+          <span class="app-title">itzCut Desktop</span>
+          <span class="version-tag" id="versionText">v2.3.0</span>
+        </div>
+        <div class="app-subtitle">Lightweight Local Video & Audio Suite</div>
+      </div>
+    </div>
+
+    <div class="progress-section">
+      <div class="status-row">
+        <span class="status-text">
+          <span class="status-dot"></span>
+          <span id="statusMessage">Starting engine...</span>
+        </span>
+        <span id="percentText">20%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-bar" id="progressBar" style="width: 20%;"></div>
+      </div>
+    </div>
+
+    <div class="footer-info">
+      <span class="info-badge">100% Local • 4x Faster Than Handbrake</span>
+      <span>Hardware GPU Accelerated</span>
+    </div>
+  </div>
+
+  <script>
+    const steps = [
+      { percent: 35, text: 'Detecting GPU & hardware acceleration...' },
+      { percent: 60, text: 'Initializing native FFmpeg 7.1 engine...' },
+      { percent: 85, text: 'Loading workstation modules...' },
+      { percent: 95, text: 'Preparing studio interface...' },
+      { percent: 100, text: 'Starting itzCut Desktop...' }
+    ];
+
+    let currentStep = 0;
+    const bar = document.getElementById('progressBar');
+    const percent = document.getElementById('percentText');
+    const msg = document.getElementById('statusMessage');
+
+    const interval = setInterval(() => {
+      if (currentStep < steps.length) {
+        const s = steps[currentStep];
+        bar.style.width = s.percent + '%';
+        percent.textContent = s.percent + '%';
+        msg.textContent = s.text;
+        currentStep++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 380);
+  </script>
+</body>
+</html>

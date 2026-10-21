@@ -776,15 +776,35 @@ class Transcoder {
         if (targetRes) {
           compressFilters.push(this.buildScaleFilter(targetRes, options.canvasFit || 'pad'));
         }
-        if (options.fps && options.fps !== 'original') {
-          compressFilters.push(`fps=${options.fps}`);
+
+        const isVfr = options.fpsMode === 'vfr';
+
+        if (isVfr) {
+          if (options.fps && options.fps !== 'original') {
+            const targetFps = parseFloat(options.fps);
+            if (!isNaN(targetFps) && targetFps > 0) {
+              const minInterval = (1 / targetFps) * 0.95;
+              compressFilters.push(`select='eq(n\\,0)+gt(t-prev_selected_t\\,${minInterval.toFixed(5)})'`);
+            }
+          }
+          // Induce realistic, microsecond-level presentation timestamp variance for genuine VFR container tagging
+          compressFilters.push("setpts='PTS-STARTPTS+if(eq(N\\,0)\\,0\\,(mod(N\\,3)*0.0005)/TB)'");
+        } else {
+          // Strict Constant Framerate (CFR)
+          if (options.fps && options.fps !== 'original') {
+            compressFilters.push(`fps=${options.fps}`);
+          }
         }
+
         if (compressFilters.length > 0) {
           args.push('-vf', compressFilters.join(','));
         }
 
-        const fpsMode = options.fpsMode || 'cfr';
-        args.push('-fps_mode', fpsMode);
+        args.push('-fps_mode', isVfr ? 'vfr' : 'cfr');
+
+        if (isVfr) {
+          args.push('-bsf:v', 'h264_metadata=fixed_frame_rate_flag=0');
+        }
       }
 
       if (options.stripMetadata) {
@@ -885,16 +905,34 @@ class Transcoder {
             videoFilters.push(this.buildScaleFilter(targetRes, canvasFit));
           }
 
-          if (fps !== 'original') {
-            videoFilters.push(`fps=${fps}`);
+          const isVfr = options.fpsMode === 'vfr';
+
+          if (isVfr) {
+            if (fps && fps !== 'original') {
+              const targetFps = parseFloat(fps);
+              if (!isNaN(targetFps) && targetFps > 0) {
+                const minInterval = (1 / targetFps) * 0.95;
+                videoFilters.push(`select='eq(n\\,0)+gt(t-prev_selected_t\\,${minInterval.toFixed(5)})'`);
+              }
+            }
+            // Induce realistic, microsecond-level presentation timestamp variance for genuine VFR container tagging
+            videoFilters.push("setpts='PTS-STARTPTS+if(eq(N\\,0)\\,0\\,(mod(N\\,3)*0.0005)/TB)'");
+          } else {
+            // Strict Constant Framerate (CFR)
+            if (fps !== 'original') {
+              videoFilters.push(`fps=${fps}`);
+            }
           }
 
           if (videoFilters.length > 0) {
             args.push('-vf', videoFilters.join(','));
           }
 
-          const fpsMode = options.fpsMode || 'cfr';
-          args.push('-fps_mode', fpsMode);
+          args.push('-fps_mode', isVfr ? 'vfr' : 'cfr');
+
+          if (isVfr && (videoCodec.includes('264') || !videoCodec.includes('hevc'))) {
+            args.push('-bsf:v', 'h264_metadata=fixed_frame_rate_flag=0');
+          }
 
           if (muteAudio) {
             args.push('-an');

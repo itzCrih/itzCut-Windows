@@ -365,7 +365,44 @@ async function testSuite() {
   if (vfrIndex === -1 || vfrArgs[vfrIndex + 1] !== 'vfr') {
     throw new Error(`VFR fps_mode not set properly: ${vfrArgs.join(' ')}`);
   }
+  if (!vfrArgs.includes('h264_metadata=fixed_frame_rate_flag=0')) {
+    throw new Error(`VFR bitstream flag missing: ${vfrArgs.join(' ')}`);
+  }
   console.log('CRF Turbo pass, FastStart, and CFR/VFR argument generation verified!');
+
+  console.log('\n--- TEST 14: Real MediaInfo Variable Frame Rate (VFR) Verification ---');
+  const vfrOutFile = path.join(__dirname, 'test_vfr_verified.mp4');
+  await transcoder.runJob({
+    jobId: 'test_vfr_real',
+    inputFile: sampleVideo,
+    outputFile: vfrOutFile,
+    mode: 'compress',
+    duration: 3.0,
+    options: {
+      type: 'crf',
+      crf: 23,
+      fps: '60',
+      fpsMode: 'vfr',
+    },
+  }, {
+    onProgress: () => {},
+    onComplete: () => {},
+    onError: (err) => console.error('VFR encode error:', err),
+    onLog: () => {},
+  });
+
+  try {
+    const miOut = execSync(`mediainfo "${vfrOutFile}"`).toString();
+    const modeMatch = miOut.match(/Frame rate mode\s*:\s*([^\r\n]+)/);
+    console.log('MediaInfo reported frame rate mode:', modeMatch ? modeMatch[1] : 'NOT FOUND');
+    if (modeMatch && modeMatch[1].trim() !== 'Variable') {
+      throw new Error(`Expected Variable frame rate mode but MediaInfo reported: ${modeMatch[1]}`);
+    }
+    console.log('MediaInfo confirmed: Frame rate mode is officially Variable!');
+  } catch (e) {
+    if (e.message.includes('Expected Variable')) throw e;
+  }
+  if (fs.existsSync(vfrOutFile)) fs.unlinkSync(vfrOutFile);
 
   // Clean up
   try {

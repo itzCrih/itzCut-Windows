@@ -7,18 +7,18 @@ Caption "itzCut Desktop — Web Installer"
 OutFile "..\release\itzCut-WebSetup.exe"
 Icon "..\public\icon.ico"
 
-VIProductVersion "2.4.0.0"
+VIProductVersion "2.4.1.0"
 VIAddVersionKey "ProductName" "itzCut Desktop"
 VIAddVersionKey "CompanyName" "itzcrih.it"
 VIAddVersionKey "LegalCopyright" "Copyright (C) 2026 itzcrih.it"
 VIAddVersionKey "FileDescription" "itzCut Desktop Web Installer"
-VIAddVersionKey "FileVersion" "2.4.0.0"
+VIAddVersionKey "FileVersion" "2.4.1.0"
 
 SilentInstall normal
 
 Section "DownloadAndInstall"
     ; Download the setup package to TEMP using inetc
-    inetc::get /BANNER "Downloading itzCut Desktop (v2.4.0)..." "https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.0/itzCut-Desktop-Setup-2.4.0.exe" "$TEMP\itzCut-Desktop-Setup-Latest.exe" /END
+    inetc::get /BANNER "Downloading itzCut Desktop (v2.4.1)..." "https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.1/itzCut-Desktop-Setup-2.4.1.exe" "$TEMP\itzCut-Desktop-Setup-Latest.exe" /END
     Pop $0
     
     StrCmp $0 "OK" download_success

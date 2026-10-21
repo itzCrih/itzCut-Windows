@@ -50,6 +50,8 @@ export default function ConverterTab({
   const [customResolution, setCustomResolution] = useState('');
   const [canvasFit, setCanvasFit] = useState('pad');
   const [fps, setFps] = useState('original');
+  const [customFps, setCustomFps] = useState('');
+  const [fpsMode, setFpsMode] = useState('cfr'); // 'cfr' (Constant) | 'vfr' (Variable)
   const [audioBitrate, setAudioBitrate] = useState('192k');
   const [audioSampleRate, setAudioSampleRate] = useState('original');
   const [audioChannels, setAudioChannels] = useState('original');
@@ -128,6 +130,10 @@ export default function ConverterTab({
       cleanCustomRes = `${match[1]}x${match[2]}`;
     }
 
+    const effectiveFps = fps === 'custom'
+      ? (customFps && parseFloat(customFps) > 0 ? Math.min(300, Math.max(1, parseFloat(customFps))).toString() : 'original')
+      : fps;
+
     if (isAudioOnly) {
       const fmtConfig = CONVERTER_AUDIO_FORMATS.find((f) => f.ext === selectedFormat) || CONVERTER_AUDIO_FORMATS[0];
       outExt = fmtConfig.ext;
@@ -153,6 +159,7 @@ export default function ConverterTab({
       jobOptions = {
         type: 'tiktok',
         preset: speedPreset,
+        fpsMode: 'cfr',
         muteAudio,
         audioBoostDb: parseInt(audioBoostDb, 10) || 0,
         stripMetadata,
@@ -169,7 +176,8 @@ export default function ConverterTab({
         resolution,
         customResolution: cleanCustomRes,
         canvasFit,
-        fps,
+        fps: effectiveFps,
+        fpsMode,
         muteAudio,
         audioBoostDb: parseInt(audioBoostDb, 10) || 0,
         stripMetadata,
@@ -186,7 +194,8 @@ export default function ConverterTab({
         resolution,
         customResolution: cleanCustomRes,
         canvasFit,
-        fps,
+        fps: effectiveFps,
+        fpsMode,
         muteAudio,
         audioBoostDb: parseInt(audioBoostDb, 10) || 0,
         stripMetadata,
@@ -205,7 +214,8 @@ export default function ConverterTab({
         resolution,
         customResolution: cleanCustomRes,
         canvasFit,
-        fps,
+        fps: effectiveFps,
+        fpsMode,
         crf: parseInt(crf, 10),
         audioBitrate,
         audioOnly: false,
@@ -652,18 +662,105 @@ export default function ConverterTab({
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">Framerate (FPS)</label>
+                        <label className="form-label">
+                          <span>Framerate (FPS)</span>
+                          {fps === 'custom' && (
+                            <span className="form-label-tag">Custom</span>
+                          )}
+                        </label>
                         <select
                           className="form-select"
                           value={fps}
                           onChange={(e) => setFps(e.target.value)}
                         >
                           <option value="original">Original ({mediaInfo?.video?.fps || 'Auto'} fps)</option>
-                          <option value="60">60 FPS (Smooth)</option>
-                          <option value="30">30 FPS (Standard)</option>
-                          <option value="24">24 FPS (Cinematic)</option>
+                          <option value="60">60 FPS</option>
+                          <option value="59.94">59.94 FPS</option>
+                          <option value="30">30 FPS</option>
+                          <option value="29.97">29.97 FPS</option>
+                          <option value="25">25 FPS</option>
+                          <option value="24">24 FPS</option>
+                          <option value="23.976">23.976 FPS</option>
+                          <option value="20">20 FPS</option>
+                          <option value="custom">Custom FPS...</option>
                         </select>
                       </div>
+                    </div>
+
+                    {/* Custom Framerate Text Input */}
+                    {fps === 'custom' && (
+                      <div className="form-group" style={{ marginTop: '-4px' }}>
+                        <label className="form-label">
+                          <span>Custom Framerate</span>
+                          <span className="form-label-tag">Max 300 FPS</span>
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            max="300"
+                            step="any"
+                            className="form-input"
+                            placeholder="e.g. 120 or 144"
+                            value={customFps}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '') {
+                                setCustomFps('');
+                                return;
+                              }
+                              const num = parseFloat(val);
+                              if (num > 300) setCustomFps('300');
+                              else if (num < 1) setCustomFps('1');
+                              else setCustomFps(val);
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ whiteSpace: 'nowrap', padding: '7px 11px', fontSize: '11.5px' }}
+                            onClick={() => setCustomFps('120')}
+                          >
+                            120 FPS
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ whiteSpace: 'nowrap', padding: '7px 11px', fontSize: '11.5px' }}
+                            onClick={() => setCustomFps('144')}
+                          >
+                            144 FPS
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ whiteSpace: 'nowrap', padding: '7px 11px', fontSize: '11.5px' }}
+                            onClick={() => setCustomFps('240')}
+                          >
+                            240 FPS
+                          </button>
+                        </div>
+                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                          Enter custom frame rate between <strong>1</strong> and <strong>300</strong> FPS.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Framerate Mode (CFR vs VFR) */}
+                    <div className="form-group" style={{ marginTop: '-4px' }}>
+                      <label className="form-label">
+                        <span>Framerate Mode</span>
+                        <span className="form-label-tag">{fpsMode === 'cfr' ? 'Constant (CFR)' : 'Variable (VFR)'}</span>
+                      </label>
+                      <select
+                        className="form-select"
+                        value={fpsMode}
+                        onChange={(e) => setFpsMode(e.target.value)}
+                      >
+                        <option value="cfr">Constant Framerate (CFR - Default, Best Compatibility & Sync)</option>
+                        <option value="vfr">Variable Framerate (VFR - Adaptive Frame Cadence)</option>
+                      </select>
                     </div>
 
                     {/* Custom Resolution Text Input */}

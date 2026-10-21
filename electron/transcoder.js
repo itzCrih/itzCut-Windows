@@ -755,6 +755,7 @@ class Transcoder {
         } else {
           args.push('-c:v', 'libx264');
           args.push('-crf', crf.toString());
+          args.push('-fastfirstpass', '1');
           args.push('-preset', preset);
           args.push('-pix_fmt', 'yuv420p');
         }
@@ -781,12 +782,20 @@ class Transcoder {
         if (compressFilters.length > 0) {
           args.push('-vf', compressFilters.join(','));
         }
+
+        const fpsMode = options.fpsMode || 'cfr';
+        args.push('-fps_mode', fpsMode);
       }
 
       if (options.stripMetadata) {
         args.push('-map_metadata', '-1');
       } else {
         args.push('-metadata', 'comment=Encoded by cut.itzcrih.it', '-metadata', 'description=Encoded by cut.itzcrih.it');
+      }
+
+      const outExt = path.extname(outputFile).toLowerCase();
+      if (['.mp4', '.mov', '.m4v'].includes(outExt)) {
+        args.push('-movflags', '+faststart');
       }
 
       args.push(outputFile);
@@ -864,7 +873,7 @@ class Transcoder {
                 args.push('-c:v', hwInfo.encoder, '-rc', 'cqp', '-qp_i', crf.toString(), '-qp_p', crf.toString(), '-pix_fmt', 'yuv420p');
               }
             } else {
-              args.push('-c:v', videoCodec, '-crf', crf.toString(), '-preset', 'medium', '-pix_fmt', 'yuv420p');
+              args.push('-c:v', videoCodec, '-crf', crf.toString(), '-fastfirstpass', '1', '-preset', 'medium', '-pix_fmt', 'yuv420p');
             }
           } else {
             args.push('-c:v', videoCodec);
@@ -884,6 +893,9 @@ class Transcoder {
             args.push('-vf', videoFilters.join(','));
           }
 
+          const fpsMode = options.fpsMode || 'cfr';
+          args.push('-fps_mode', fpsMode);
+
           if (muteAudio) {
             args.push('-an');
           } else {
@@ -902,6 +914,11 @@ class Transcoder {
         args.push('-map_metadata', '-1');
       } else {
         args.push('-metadata', 'comment=Encoded by cut.itzcrih.it', '-metadata', 'description=Encoded by cut.itzcrih.it');
+      }
+
+      const outExt = path.extname(outputFile).toLowerCase();
+      if (['.mp4', '.mov', '.m4v'].includes(outExt) && !audioOnly) {
+        args.push('-movflags', '+faststart');
       }
 
       args.push(outputFile);

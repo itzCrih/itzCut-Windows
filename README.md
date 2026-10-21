@@ -8,7 +8,7 @@
 The ultra-fast, 100% local Windows suite for video and audio conversion, compression, lossless trimming, and studio editing.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows_10_%7C_11_(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
-[![Version](https://img.shields.io/badge/Version-v2.3.0-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v2.4.0-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
 [![Engine](https://img.shields.io/badge/FFmpeg-v7.1_Native-black?style=for-the-badge)](https://ffmpeg.org)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
 
@@ -16,13 +16,13 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 
 ### Download itzCut Desktop
 
-[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.3.0)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.3.0/itzCut-Desktop-Setup-2.3.0.exe)  
-[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.3.0)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.3.0/itzCut-Desktop-2.3.0-Portable.exe)
+[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.4.0)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.0/itzCut-Desktop-Setup-2.4.0.exe)  
+[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.4.0)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.0/itzCut-Desktop-2.4.0-Portable.exe)
 
 | Package | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.3.0.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.3.0/itzCut-Desktop-Setup-2.3.0.exe) |
-| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.3.0-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.3.0/itzCut-Desktop-2.3.0-Portable.exe) |
+| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.4.0.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.0/itzCut-Desktop-Setup-2.4.0.exe) |
+| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.4.0-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.0/itzCut-Desktop-2.4.0-Portable.exe) |
 
 *Requires zero installation privileges for the portable build. Built-in Auto-Updater checks for future releases seamlessly on startup.*
 
@@ -55,7 +55,8 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
   - AAC (Advanced Audio Coding)
   - OGG Vorbis
   - Opus (Low-latency voice & music)
-- **Resolution & Framerate Control:** Native Passthrough, 4K UHD, 1440p, 1080p, 720p, 480p at 60fps, 30fps, or 24fps.
+- **Resolution & Framerate Control:** Native Passthrough, 4K UHD, 1440p, 1080p, 720p, 480p, or Custom Resolution with Pad, Crop, or Stretch. Framerate presets for 20, 23.976, 24, 25, 29.97, 30, 59.94, and 60 FPS, plus custom numeric input up to 300 FPS and Constant (CFR) vs Variable (VFR) cadence modes.
+- **Turbo CRF & FastStart:** Turbo analysis pass (`-fastfirstpass 1`) and Web/Discord FastStart (`-movflags +faststart`) for instant remote streaming.
 - **Privacy Stripper:** Optional removal of EXIF tags, GPS metadata, and container tracking details.
 
 ### 3. Trimmer & Studio Editing Suite
@@ -69,9 +70,10 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 
 ### 4. Realtime Queue & Hardware Diagnostics
 - **Live Visual Queue:** Multi-job management with percentage completion, encoding FPS, speed multiplier (e.g. 25.4x), elapsed duration, and estimated time remaining.
+- **Selectable Logs & One-Click Copy:** View raw FFmpeg console output with selectable text and a dedicated "Copy Logs" button for quick troubleshooting.
 - **Clean Cancellation:** Cancelling an active encode immediately halts child processes, removes the job entry, and deletes temporary scratch files from disk.
 - **Render Completion Sound:** Synthesized Web Audio chime to notify you the instant an export finishes.
-- **Accurate Hardware Detection:** Tests GPU encoders to avoid false positives and displays detected CPU cores, RAM, and graphics cards.
+- **Instant Cached Hardware Detection:** Probes GPU encoders and caches specs for <1 second subsequent launches.
 
 ---
 

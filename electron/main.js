@@ -39,12 +39,12 @@ function createSplashScreen() {
     width: 480,
     height: 310,
     frame: false,
-    transparent: true,
+    transparent: false,
     resizable: false,
     center: true,
     alwaysOnTop: true,
     show: true,
-    backgroundColor: '#00000000',
+    backgroundColor: '#07090e',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       nodeIntegration: false,
@@ -233,7 +233,7 @@ app.whenReady().then(async () => {
   createWindow(async () => {
     await detectPromise;
     const elapsed = Date.now() - splashStartTime;
-    const minSplashDuration = 1800; // 1.8s minimum for clean, polished splash experience
+    const minSplashDuration = 500; // Snappy 0.5s splash screen for ultra-fast startup feel
     const remainingDelay = Math.max(0, minSplashDuration - elapsed);
 
     setTimeout(() => {

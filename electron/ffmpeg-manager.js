@@ -38,7 +38,65 @@ class FFmpegManager {
     }
   }
 
-  async detect() {
+  getCachePath() {
+    return path.join(this.appDataPath, 'hw-detect-cache.json');
+  }
+
+  loadCache() {
+    try {
+      const cachePath = this.getCachePath();
+      if (fs.existsSync(cachePath)) {
+        const raw = fs.readFileSync(cachePath, 'utf8');
+        const data = JSON.parse(raw);
+        if (
+          data &&
+          data.ffmpegPath &&
+          data.ffprobePath &&
+          fs.existsSync(data.ffmpegPath) &&
+          fs.existsSync(data.ffprobePath) &&
+          data.status &&
+          data.status.available
+        ) {
+          this.ffmpegPath = data.ffmpegPath;
+          this.ffprobePath = data.ffprobePath;
+          this.status = data.status;
+          return true;
+        }
+      }
+    } catch (e) {
+      // Ignore cache load errors
+    }
+    return false;
+  }
+
+  saveCache() {
+    try {
+      if (!fs.existsSync(this.appDataPath)) {
+        fs.mkdirSync(this.appDataPath, { recursive: true });
+      }
+      const cachePath = this.getCachePath();
+      const cacheData = {
+        timestamp: Date.now(),
+        ffmpegPath: this.ffmpegPath,
+        ffprobePath: this.ffprobePath,
+        status: this.status,
+      };
+      fs.writeFileSync(cachePath, JSON.stringify(cacheData, null, 2), 'utf8');
+    } catch (e) {
+      // Ignore cache save errors
+    }
+  }
+
+  async detect(force = false) {
+    if (!force && this.loadCache()) {
+      return {
+        ...this.status,
+        ffmpegPath: this.ffmpegPath,
+        ffprobePath: this.ffprobePath,
+        binDir: this.binDir,
+      };
+    }
+
     // 1. Check local bin directory first
     const localFfmpeg = path.join(this.binDir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
     const localFfprobe = path.join(this.binDir, process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
@@ -88,6 +146,10 @@ class FFmpegManager {
       }
     } else {
       this.status.available = false;
+    }
+
+    if (this.status.available) {
+      this.saveCache();
     }
 
     return {

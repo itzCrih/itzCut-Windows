@@ -9,11 +9,24 @@ import {
   Terminal,
   Trash2,
   Clock,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { formatBytes } from '../utils/formatters';
 
 export default function QueueTab({ jobs, onCancelJob, onClearCompleted, onShowToast }) {
   const [expandedLogId, setExpandedLogId] = useState(null);
+  const [copiedJobId, setCopiedJobId] = useState(null);
+
+  const handleCopyLogs = (job) => {
+    const text = (job.logs && job.logs.length > 0) ? job.logs.join('') : 'No log messages captured.';
+    navigator.clipboard.writeText(text);
+    setCopiedJobId(job.jobId);
+    if (onShowToast) onShowToast('FFmpeg logs copied to clipboard!', 'success');
+    setTimeout(() => {
+      setCopiedJobId(null);
+    }, 2000);
+  };
 
   const handleShowInFolder = async (filePath) => {
     if (!window.itzCutAPI) return;
@@ -181,8 +194,19 @@ export default function QueueTab({ jobs, onCancelJob, onClearCompleted, onShowTo
                 {/* Expandable Log Drawer */}
                 {expandedLogId === job.jobId && (
                   <div style={{ marginTop: '14px' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>
-                      RAW FFTRANSCODE LOGS:
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 600 }}>
+                        RAW FFTRANSCODE LOGS:
+                      </span>
+                      <button
+                        className="btn-secondary"
+                        style={{ padding: '3px 8px', fontSize: '11px', gap: '4px', height: '24px' }}
+                        onClick={() => handleCopyLogs(job)}
+                        title="Copy logs to clipboard"
+                      >
+                        {copiedJobId === job.jobId ? <Check size={12} color="#7ee787" /> : <Copy size={12} />}
+                        <span>{copiedJobId === job.jobId ? 'Copied!' : 'Copy Logs'}</span>
+                      </button>
                     </div>
                     <div className="terminal-box">
                       {job.logs && job.logs.length > 0

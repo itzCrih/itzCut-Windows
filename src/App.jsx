@@ -29,8 +29,8 @@ export default function App() {
 
   const [updateState, setUpdateState] = useState({
     status: 'idle',
-    currentVersion: '2.3.0',
-    latestVersion: '2.3.0',
+    currentVersion: '2.4.0',
+    latestVersion: '2.4.0',
     downloadPercent: 0,
     error: null,
   });
@@ -391,7 +391,7 @@ export default function App() {
           </div>
 
           <div>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>itzCut Desktop v2.3.0</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>itzCut Desktop v2.4.0</span>
           </div>
         </footer>
       </div>

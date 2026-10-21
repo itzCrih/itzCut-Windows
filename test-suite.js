@@ -322,6 +322,51 @@ async function testSuite() {
   }
   console.log('Custom resolution verified: Genuine 1080x1920 output successfully generated!');
 
+  console.log('\n--- TEST 13: Instant Hardware Detection Cache & CRF FastStart Verification ---');
+  const cacheStart = Date.now();
+  const cachedStatus = await manager.detect();
+  const cacheDurationMs = Date.now() - cacheStart;
+  console.log(`Subsequent detect() duration from cache: ${cacheDurationMs}ms (Available: ${cachedStatus.available})`);
+  if (cacheDurationMs > 50 || !cachedStatus.available) {
+    throw new Error(`Cache load failed or too slow: took ${cacheDurationMs}ms`);
+  }
+  console.log('Hardware detection caching verified: <1ms startup response!');
+
+  // Test CRF flags: -fastfirstpass 1, -fps_mode cfr/vfr, -movflags +faststart
+  const cfrArgs = transcoder.buildArgs({
+    inputFile: 'input.mp4',
+    outputFile: 'output.mp4',
+    mode: 'compress',
+    options: {
+      type: 'crf',
+      crf: 22,
+      fps: '24',
+      fpsMode: 'cfr',
+    },
+  }, true);
+
+  if (!cfrArgs.includes('-fastfirstpass') || !cfrArgs.includes('-fps_mode') || !cfrArgs.includes('+faststart')) {
+    throw new Error(`CRF flags missing in buildArgs: ${cfrArgs.join(' ')}`);
+  }
+
+  const vfrArgs = transcoder.buildArgs({
+    inputFile: 'input.mp4',
+    outputFile: 'output.mp4',
+    mode: 'convert',
+    options: {
+      format: 'mp4',
+      videoCodec: 'libx264',
+      fps: '59.94',
+      fpsMode: 'vfr',
+    },
+  }, true);
+
+  const vfrIndex = vfrArgs.indexOf('-fps_mode');
+  if (vfrIndex === -1 || vfrArgs[vfrIndex + 1] !== 'vfr') {
+    throw new Error(`VFR fps_mode not set properly: ${vfrArgs.join(' ')}`);
+  }
+  console.log('CRF Turbo pass, FastStart, and CFR/VFR argument generation verified!');
+
   // Clean up
   try {
     if (fs.existsSync(sampleVideo)) fs.unlinkSync(sampleVideo);

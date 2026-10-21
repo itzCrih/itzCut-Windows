@@ -1315,6 +1315,9 @@ body.disable-page-animations .page-view-animated {
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.5;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .spin {

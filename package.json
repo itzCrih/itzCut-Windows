@@ -1,6 +1,6 @@
 {
   "name": "itzcut-desktop",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "itzCut Desktop — Local Video & Audio Suite for Windows",
   "productName": "itzCut Desktop",
   "main": "electron/main.js",
@@ -12,6 +12,7 @@
     "start": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
     "dist": "vite build && electron-builder --win --x64",
     "dist:portable": "vite build && electron-builder --win portable --x64",
+    "sign": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/sign-executables.ps1",
     "release": "node scripts/publish-release.js"
   },
   "build": {

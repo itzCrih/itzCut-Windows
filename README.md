@@ -8,7 +8,7 @@
 The ultra-fast, 100% local Windows suite for video and audio conversion, compression, lossless trimming, and studio editing.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows_10_%7C_11_(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
-[![Version](https://img.shields.io/badge/Version-v2.4.1-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v2.4.2-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
 [![Engine](https://img.shields.io/badge/FFmpeg-v7.1_Native-black?style=for-the-badge)](https://ffmpeg.org)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
 
@@ -16,13 +16,13 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 
 ### Download itzCut Desktop
 
-[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.4.1)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.1/itzCut-Desktop-Setup-2.4.1.exe)  
-[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.4.1)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.1/itzCut-Desktop-2.4.1-Portable.exe)
+[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.4.2)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-Setup-2.4.2.exe)  
+[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.4.2)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-2.4.2-Portable.exe)
 
 | Package | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.4.1.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.1/itzCut-Desktop-Setup-2.4.1.exe) |
-| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.4.1-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.1/itzCut-Desktop-2.4.1-Portable.exe) |
+| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.4.2.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-Setup-2.4.2.exe) |
+| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.4.2-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-2.4.2-Portable.exe) |
 
 *Requires zero installation privileges for the portable build. Built-in Auto-Updater checks for future releases seamlessly on startup.*
 
@@ -44,7 +44,7 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 ### 1. Target Size & Social Media Compressor
 - **Discord Optimizations:** Instant target bit calculation for **8 MB** (Discord Free limit), **25 MB** (Nitro Basic), and **50 MB** (Nitro Boost).
 - **TikTok Profile (2-Pass VBR CFR):** Produces native constant frame-rate (CFR) MP4 streams with 20 Mbps target and 40 Mbps max ceiling, optimized for vertical feeds without re-compression degradation.
-- **CRF Quality Engine:** Granular Constant Rate Factor slider with instant quality presets for visually lossless results.
+- **CRF Quality Engine & Instant Frame Snapshot:** Granular Constant Rate Factor slider with instant quality presets and real-time source video frame snapshot preview. Sample video frames across the timeline with timestamp and resolution tags to inspect clarity before encoding.
 
 ### 2. High-Performance Format Converter
 - **Video Encoders:** MP4 (H.264 / NVENC / QSV / AMF / x264), MP4 (H.265 / HEVC), WebM (VP9), MKV, MOV (ProRes / PCM compatibility with instant proxy streaming), and Animated GIF.
@@ -84,6 +84,17 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 | **Video Files** | `.mp4`, `.mov`, `.mkv`, `.webm`, `.avi`, `.m4v`, `.flv`, `.wmv` | Native GPU HWAccel (NVENC, QSV, AMF) or CPU multi-thread |
 | **Audio Files** | `.mp3`, `.wav`, `.flac`, `.aac`, `.ogg`, `.m4a`, `.wma` | Dedicated Audio Studio with waveform visualization |
 | **Non-Media Files** | `.png`, `.jpg`, `.pdf`, `.exe`, etc. | Automatically blocked with detailed error alert |
+
+---
+
+## Windows SmartScreen & Code Signing
+
+All official itzCut Desktop binaries are digitally signed with **SHA-256 Authenticode** signatures (`CN=itzCut Software, O=itzcrih.it`) and stamped by DigiCert RFC-3161 timestamping authorities.
+
+Because itzCut Desktop is an independently developed utility, Windows Defender SmartScreen may display an unrecognized application warning on newly published builds:
+1. When prompted by SmartScreen, click **More info**.
+2. Click **Run anyway** (Publisher: `itzCut Software`).
+3. Alternatively, you can right-click the downloaded `.exe`, select **Properties**, check **Unblock**, and click **OK**, or import the included public certificate `itzCut-Software-Cert.cer` into your user Trusted Root store.
 
 ---
 

@@ -393,6 +393,15 @@ ipcMain.handle('media:getPreviewProxy', async (event, filePath) => {
   }
 });
 
+// IPC: Extract single frame snapshot from video
+ipcMain.handle('media:extractFrame', async (event, { filePath, timestamp }) => {
+  try {
+    return await ffmpegManager.extractFrame(filePath, timestamp);
+  } catch (err) {
+    throw new Error(err.message);
+  }
+});
+
 
 // IPC: FFmpeg Status & Downloader
 ipcMain.handle('ffmpeg:getStatus', async () => {

@@ -395,6 +395,72 @@ class FFmpegManager {
     });
   }
 
+  async extractFrame(filePath, timestamp = null) {
+    if (!filePath || !fs.existsSync(filePath)) {
+      throw new Error('File does not exist: ' + filePath);
+    }
+    if (!this.ffmpegPath) {
+      await this.detect();
+    }
+    if (!this.ffmpegPath) {
+      throw new Error('FFmpeg not available to extract frame');
+    }
+
+    let seekSec = timestamp;
+    if (seekSec === null || seekSec === undefined || isNaN(seekSec)) {
+      try {
+        const meta = await this.probe(filePath);
+        const dur = meta.duration || 10;
+        // Sample at a random point between 10% and 80% of video duration
+        seekSec = Math.max(0.2, Math.min(dur - 0.2, dur * (0.1 + Math.random() * 0.7)));
+      } catch (e) {
+        seekSec = 1.0;
+      }
+    }
+
+    const previewDir = path.join(os.tmpdir(), 'itzcut_frames');
+    if (!fs.existsSync(previewDir)) {
+      fs.mkdirSync(previewDir, { recursive: true });
+    }
+
+    const stat = fs.statSync(filePath);
+    const hash = crypto.createHash('md5').update(`${filePath}_${stat.mtimeMs}_${stat.size}_${Math.round(seekSec * 10)}_${Date.now()}`).digest('hex');
+    const outJpeg = path.join(previewDir, `frame_${hash}.jpg`);
+
+    return new Promise((resolve, reject) => {
+      // High-speed fast input seek (-ss before -i) extracts single frame in <30ms
+      const args = [
+        '-y',
+        '-hide_banner',
+        '-ss', seekSec.toFixed(3),
+        '-i', filePath,
+        '-vframes', '1',
+        '-q:v', '3',
+        '-vf', 'scale=trunc(min(960\\,iw)/2)*2:-2',
+        outJpeg,
+      ];
+
+      const proc = spawn(this.ffmpegPath, args);
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outJpeg)) {
+          try {
+            const imgBuf = fs.readFileSync(outJpeg);
+            const dataUrl = `data:image/jpeg;base64,${imgBuf.toString('base64')}`;
+            try { fs.unlinkSync(outJpeg); } catch (e) {}
+            resolve({ dataUrl, timestamp: seekSec });
+          } catch (readErr) {
+            reject(readErr);
+          }
+        } else {
+          reject(new Error(`Failed to extract preview frame: ${stderr.slice(-200)}`));
+        }
+      });
+      proc.on('error', reject);
+    });
+  }
+
   async downloadStaticBuild(progressCallback) {
     this.ensureBinDir();
 

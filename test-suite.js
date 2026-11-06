@@ -404,6 +404,16 @@ async function testSuite() {
   }
   if (fs.existsSync(vfrOutFile)) fs.unlinkSync(vfrOutFile);
 
+  console.log('\n--- TEST 15: Single Frame Snapshot Extraction ---');
+  const frameResult = await manager.extractFrame(sampleVideo, 1.0);
+  if (!frameResult || !frameResult.dataUrl || !frameResult.dataUrl.startsWith('data:image/jpeg;base64,')) {
+    throw new Error('Frame extraction failed to return valid JPEG data URL');
+  }
+  if (typeof frameResult.timestamp !== 'number') {
+    throw new Error('Frame extraction did not return numeric timestamp');
+  }
+  console.log('Single frame snapshot extraction verified! Base64 length:', frameResult.dataUrl.length);
+
   // Clean up
   try {
     if (fs.existsSync(sampleVideo)) fs.unlinkSync(sampleVideo);

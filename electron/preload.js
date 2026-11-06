@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('itzCutAPI', {
   // Media Inspection
   probeFile: (filePath) => ipcRenderer.invoke('media:probe', filePath),
   getPreviewProxy: (filePath) => ipcRenderer.invoke('media:getPreviewProxy', filePath),
+  extractFrame: (filePath, timestamp) => ipcRenderer.invoke('media:extractFrame', { filePath, timestamp }),
 
   // FFmpeg Engine Status & Auto-Download
   getFfmpegStatus: () => ipcRenderer.invoke('ffmpeg:getStatus'),

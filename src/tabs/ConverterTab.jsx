@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   VolumeX,
   Volume2,
+  Camera,
 } from 'lucide-react';
 import DropZone from '../components/DropZone';
 import {
@@ -18,7 +19,7 @@ import {
   CONVERTER_VIDEO_FORMATS,
   CONVERTER_AUDIO_FORMATS,
 } from '../utils/presets';
-import { formatBytes } from '../utils/formatters';
+import { formatBytes, formatTimecode } from '../utils/formatters';
 import { isAudioMedia } from '../utils/fileTypes';
 
 export default function ConverterTab({
@@ -59,6 +60,36 @@ export default function ConverterTab({
   const [audioBoostDb, setAudioBoostDb] = useState(0);
   const [stripMetadata, setStripMetadata] = useState(false);
   const [outputDir, setOutputDir] = useState(defaultOutputDir || '');
+
+  // Live video frame snapshot preview to enrich CRF Quality mode
+  const [previewFrame, setPreviewFrame] = useState(null);
+  const [isLoadingFrame, setIsLoadingFrame] = useState(false);
+
+  const fetchRandomFrame = async (filePath = null) => {
+    const targetPath = filePath || currentFile?.path;
+    if (!targetPath || isFileAudio) return;
+    if (!window.itzCutAPI?.extractFrame) return;
+
+    setIsLoadingFrame(true);
+    try {
+      const res = await window.itzCutAPI.extractFrame(targetPath);
+      if (res && res.dataUrl) {
+        setPreviewFrame(res);
+      }
+    } catch (err) {
+      console.warn('Failed to extract random preview frame:', err);
+    } finally {
+      setIsLoadingFrame(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentFile && !isFileAudio) {
+      fetchRandomFrame(currentFile.path);
+    } else {
+      setPreviewFrame(null);
+    }
+  }, [currentFile?.path, isFileAudio]);
 
   // Auto-switch to audio converter mode when input file is audio
   useEffect(() => {
@@ -334,7 +365,7 @@ export default function ConverterTab({
                       ))}
                     </div>
 
-                    <div className="form-group">
+                    <div className="form-group" style={{ marginBottom: '14px' }}>
                       <label className="form-label">
                         <span>Constant Rate Factor (CRF): {crf}</span>
                         <span className="form-label-tag">
@@ -353,6 +384,134 @@ export default function ConverterTab({
                         }}
                       />
                     </div>
+
+                    {/* Source Frame Snapshot Preview Card */}
+                    {!isFileAudio && (
+                      <div
+                        style={{
+                          background: 'rgba(5, 7, 10, 0.75)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '12px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                            <Camera size={14} color="var(--gold-primary)" />
+                            <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-main)' }}>
+                              Source Frame Preview
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '3px 9px', fontSize: '11px', gap: '5px', height: '24px' }}
+                            onClick={() => fetchRandomFrame()}
+                            disabled={isLoadingFrame}
+                            title="Sample another random frame snapshot from the loaded video"
+                          >
+                            <RefreshCw size={11} className={isLoadingFrame ? 'spin' : ''} />
+                            <span>{isLoadingFrame ? 'Sampling...' : 'Randomize Frame'}</span>
+                          </button>
+                        </div>
+
+                        {previewFrame?.dataUrl ? (
+                          <div
+                            style={{
+                              position: 'relative',
+                              width: '100%',
+                              borderRadius: '6px',
+                              overflow: 'hidden',
+                              background: '#000000',
+                              border: '1px solid rgba(255, 255, 255, 0.08)',
+                              aspectRatio: '16 / 9',
+                              maxHeight: '190px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <img
+                              src={previewFrame.dataUrl}
+                              alt="Source preview frame"
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'contain',
+                                display: 'block',
+                              }}
+                            />
+                            {/* Timestamp badge */}
+                            <div
+                              style={{
+                                position: 'absolute',
+                                bottom: '8px',
+                                left: '8px',
+                                background: 'rgba(0, 0, 0, 0.75)',
+                                backdropFilter: 'blur(4px)',
+                                color: '#e6b422',
+                                border: '1px solid rgba(230, 180, 34, 0.35)',
+                                borderRadius: '4px',
+                                padding: '2px 7px',
+                                fontSize: '10.5px',
+                                fontFamily: 'var(--font-mono)',
+                                fontWeight: 700,
+                              }}
+                            >
+                              Frame @ {formatTimecode(previewFrame.timestamp || 0)}
+                            </div>
+
+                            {/* Resolution badge */}
+                            <div
+                              style={{
+                                position: 'absolute',
+                                bottom: '8px',
+                                right: '8px',
+                                background: 'rgba(0, 0, 0, 0.75)',
+                                backdropFilter: 'blur(4px)',
+                                color: '#c9d1d9',
+                                border: '1px solid rgba(255, 255, 255, 0.12)',
+                                borderRadius: '4px',
+                                padding: '2px 7px',
+                                fontSize: '10.5px',
+                                fontFamily: 'var(--font-mono)',
+                              }}
+                            >
+                              {mediaInfo?.video?.width || 1920}×{mediaInfo?.video?.height || 1080}
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              padding: '24px 16px',
+                              textAlign: 'center',
+                              color: 'var(--text-dim)',
+                              fontSize: '12px',
+                              background: 'rgba(0, 0, 0, 0.3)',
+                              borderRadius: '6px',
+                              border: '1px dashed var(--border-subtle)',
+                            }}
+                          >
+                            {isLoadingFrame ? (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                <RefreshCw size={14} className="spin" color="var(--gold-primary)" />
+                                <span>Extracting high-resolution frame snapshot...</span>
+                              </div>
+                            ) : (
+                              <span>Click "Randomize Frame" to capture an instant preview frame snapshot.</span>
+                            )}
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.45' }}>
+                          CRF <strong>{crf}</strong> automatically modulates bitrate across high-motion action and subtle grain, preserving sharpness on detailed frames like this while saving valuable disk space.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -3,6 +3,7 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 const FFmpegManager = require('./electron/ffmpeg-manager');
 const Transcoder = require('./electron/transcoder');
+const frameBlend = require('./electron/frame-blend');
 
 async function testSuite() {
   console.log('--- TEST 1: FFmpeg Engine Detection ---');
@@ -414,6 +415,66 @@ async function testSuite() {
   }
   console.log('Single frame snapshot extraction verified! Base64 length:', frameResult.dataUrl.length);
 
+  console.log('\n--- TEST 16: Frame Blending Eligibility Guards (90 fps min, <360 fps max) ---');
+  const eligibilityCases = [[30, false], [60, false], [89.9, false], [90, true], [120, true], [240, true], [359, true], [360, false], [480, false], [0, false]];
+  for (const [fps, expected] of eligibilityCases) {
+    const res = frameBlend.getBlendEligibility(fps);
+    if (res.eligible !== expected) throw new Error(`Eligibility for ${fps} fps should be ${expected}, got ${JSON.stringify(res)}`);
+  }
+  const expectWeights = { 120: '1 2 1', 180: '1 1 1', 240: '1 2 2 2 1', 300: '1 1 1 1 1' };
+  for (const [fps, weights] of Object.entries(expectWeights)) {
+    const plan = frameBlend.planFrameBlend({ sourceFps: Number(fps) });
+    if (plan.weights.join(' ') !== weights) throw new Error(`${fps} fps weights should be ${weights}, got ${plan.weights.join(' ')}`);
+  }
+  const ntsc = frameBlend.planFrameBlend({ sourceFps: 240000 / 1001 });
+  if (ntsc.outputRate !== '60000/1001') throw new Error(`239.76 fps should blend to 59.94, got ${ntsc.outputRate}`);
+  if (frameBlend.resolveSourceFps('1000/1', '143.9/1') !== 143.9) throw new Error('Degenerate r_frame_rate must fall back to avg_frame_rate');
+  console.log('Eligibility guards, Vegas box weights, NTSC 59.94 output and VFR rate detection verified!');
+
+  console.log('\n--- TEST 17: Frame Blending Numerical Verification vs Reference Model ---');
+  const blendCases = [
+    { fps: 240, frames: 48 }, { fps: 120, frames: 40 }, { fps: 180, frames: 45 }, { fps: 144, frames: 60 },
+    { fps: 100, frames: 40 }, { fps: 165, frames: 55 }, { fps: 300, frames: 50 }, { fps: 240, frames: 60, speed: 2 },
+    { fps: 240, frames: 48, speed: 0.5 }, { fps: 144, frames: 60, speed: 1.5 },
+  ];
+  for (const engine of [frameBlend.ENGINE_POLYPHASE, frameBlend.ENGINE_TMIX]) {
+    for (const testCase of blendCases) {
+      const r = await manager.measureBlendError(status.ffmpegPath, engine, testCase);
+      if (r.maxError > 1.5 || r.outputCount < r.expectedCount || r.sourceCount !== testCase.frames) {
+        throw new Error(`${engine} blend mismatch for ${JSON.stringify(testCase)}: ${JSON.stringify(r)}`);
+      }
+    }
+  }
+  const engine = await manager.getBlendEngine();
+  console.log(`Both engines match the reference model within rounding on ${blendCases.length} cases. Selected engine: ${engine}`);
+
+  console.log('\n--- TEST 18: End-to-End Frame Blended Trim (240 fps -> 60 fps) ---');
+  const hfrSample = path.join(__dirname, 'test_hfr_240.mp4');
+  execSync(`"${status.ffmpegPath}" -y -f lavfi -i testsrc2=duration=3:size=640x360:rate=240 -f lavfi -i sine=frequency=500:duration=3 -c:v libx264 -preset ultrafast -c:a aac "${hfrSample}"`, { stdio: 'ignore' });
+  const blendedOut = path.join(__dirname, 'test_blended_60.mp4');
+  await transcoder.runJob({
+    jobId: 'test_blend', inputFile: hfrSample, outputFile: blendedOut, mode: 'trim', duration: 2,
+    options: { start: 0.5, end: 2.5, frameBlend: true, rotation: '90cw' },
+  }, { onError: (err) => console.error('Blend job error:', err.message) });
+  const blendedMeta = await manager.probe(blendedOut);
+  const frameCount = Number(execSync(`"${status.ffprobePath}" -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "${blendedOut}"`).toString().trim());
+  console.log('Blended output:', { fps: blendedMeta.video.fps, frames: frameCount, size: `${blendedMeta.video.width}x${blendedMeta.video.height}`, duration: blendedMeta.duration, audio: !!blendedMeta.audio });
+  if (blendedMeta.video.fps !== 60 || Math.abs(frameCount - 120) > 1 || blendedMeta.video.width !== 360 || !blendedMeta.audio) {
+    throw new Error('Frame blended export must be 60 fps, 120 frames for a 2 s cut, rotated, with audio');
+  }
+
+  let rejected = false;
+  try {
+    await transcoder.runJob({
+      jobId: 'test_blend_30', inputFile: sampleVideo, outputFile: path.join(__dirname, 'test_blend_30.mp4'), mode: 'trim', duration: 1,
+      options: { start: 0, end: 1, frameBlend: true },
+    }, {});
+  } catch (err) {
+    rejected = /not available/.test(err.message);
+  }
+  if (!rejected || fs.existsSync(path.join(__dirname, 'test_blend_30.mp4'))) throw new Error('A 30 fps source must be rejected for frame blending');
+  console.log('End-to-end blended trim verified; 30 fps source correctly refused!');
+
   // Clean up
   try {
     if (fs.existsSync(sampleVideo)) fs.unlinkSync(sampleVideo);
@@ -426,7 +487,8 @@ async function testSuite() {
     if (fs.existsSync(trimmedAudioOut)) fs.unlinkSync(trimmedAudioOut);
     if (fs.existsSync(wavOut)) fs.unlinkSync(wavOut);
     if (fs.existsSync(customResOut)) fs.unlinkSync(customResOut);
-    if (fs.existsSync(appData)) fs.rmdirSync(appData, { recursive: true });
+    for (const f of [hfrSample, blendedOut, path.join(__dirname, 'test_sample_prores.mov')]) if (fs.existsSync(f)) fs.unlinkSync(f);
+    fs.rmSync(appData, { recursive: true, force: true });
   } catch (e) {}
 
   console.log('\n>>> ALL AUTOMATED TESTS PASSED SUCCESSFULLY! <<<');

@@ -29,8 +29,8 @@ export default function App() {
 
   const [updateState, setUpdateState] = useState({
     status: 'idle',
-    currentVersion: '2.4.2',
-    latestVersion: '2.4.2',
+    currentVersion: __APP_VERSION__,
+    latestVersion: __APP_VERSION__,
     downloadPercent: 0,
     error: null,
   });
@@ -102,17 +102,29 @@ export default function App() {
       showToast(`Processing error: ${data.error}`, 'error');
     });
 
-    const unsubLog = window.itzCutAPI.onJobLog((data) => {
+    // FFmpeg prints several status lines per second per job: buffer them and commit at most
+    // a few times per second instead of re-rendering the whole app on every chunk.
+    const pendingLogs = new Map();
+    let logFlushTimer = null;
+    const flushLogs = () => {
+      logFlushTimer = null;
+      if (pendingLogs.size === 0) return;
+      const batch = new Map(pendingLogs);
+      pendingLogs.clear();
       setJobs((prev) =>
         prev.map((j) => {
-          if (j.jobId === data.jobId) {
-            const logs = j.logs ? [...j.logs, data.text] : [data.text];
-            if (logs.length > 150) logs.shift();
-            return { ...j, logs };
-          }
-          return j;
+          const chunks = batch.get(j.jobId);
+          if (!chunks) return j;
+          const logs = [...(j.logs || []), ...chunks];
+          return { ...j, logs: logs.length > 150 ? logs.slice(-150) : logs };
         })
       );
+    };
+    const unsubLog = window.itzCutAPI.onJobLog((data) => {
+      const chunks = pendingLogs.get(data.jobId) || [];
+      chunks.push(data.text);
+      pendingLogs.set(data.jobId, chunks);
+      if (!logFlushTimer) logFlushTimer = setTimeout(flushLogs, 250);
     });
 
     const unsubDownload = window.itzCutAPI.onFfmpegDownloadProgress((data) => {
@@ -172,6 +184,7 @@ export default function App() {
       if (unsubCanceled) unsubCanceled();
       if (unsubError) unsubError();
       if (unsubLog) unsubLog();
+      if (logFlushTimer) clearTimeout(logFlushTimer);
       if (unsubDownload) unsubDownload();
       if (unsubUpdateStatus) unsubUpdateStatus();
       if (unsubUpdateProgress) unsubUpdateProgress();
@@ -262,11 +275,8 @@ export default function App() {
   };
 
   const handleCancelJob = (jobId) => {
-    if (window.itzCutAPI) {
-      window.itzCutAPI.cancelJob(jobId);
-      setJobs((prev) => prev.filter((j) => j.jobId !== jobId));
-      showToast('Task canceled and file cleaned up.', 'info');
-    }
+    // The 'job:canceled' event removes the job and shows the toast once cleanup has finished.
+    if (window.itzCutAPI) window.itzCutAPI.cancelJob(jobId);
   };
 
   const handleClearCompleted = () => {
@@ -275,7 +285,7 @@ export default function App() {
 
   const handleRefreshFfmpeg = async () => {
     if (!window.itzCutAPI) return;
-    const status = await window.itzCutAPI.getFfmpegStatus();
+    const status = await window.itzCutAPI.getFfmpegStatus(true);
     setFfmpegStatus(status);
     showToast(status.available ? 'FFmpeg verified and ready!' : 'FFmpeg is still missing.', status.available ? 'success' : 'error');
   };
@@ -391,7 +401,7 @@ export default function App() {
           </div>
 
           <div>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>itzCut Desktop v2.4.2</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>itzCut Desktop v{__APP_VERSION__}</span>
           </div>
         </footer>
       </div>

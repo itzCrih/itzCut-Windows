@@ -8,7 +8,7 @@
 The ultra-fast, 100% local Windows suite for video and audio conversion, compression, lossless trimming, and studio editing.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows_10_%7C_11_(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
-[![Version](https://img.shields.io/badge/Version-v2.4.2-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v2.5.0-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
 [![Engine](https://img.shields.io/badge/FFmpeg-v7.1_Native-black?style=for-the-badge)](https://ffmpeg.org)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
 
@@ -16,13 +16,13 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 
 ### Download itzCut Desktop
 
-[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.4.2)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-Setup-2.4.2.exe)  
-[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.4.2)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-2.4.2-Portable.exe)
+[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.5.0)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-Setup-2.5.0.exe)  
+[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.5.0)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-2.5.0-Portable.exe)
 
 | Package | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.4.2.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-Setup-2.4.2.exe) |
-| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.4.2-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.4.2/itzCut-Desktop-2.4.2-Portable.exe) |
+| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.5.0.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-Setup-2.5.0.exe) |
+| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.5.0-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-2.5.0-Portable.exe) |
 
 *Requires zero installation privileges for the portable build. Built-in Auto-Updater checks for future releases seamlessly on startup.*
 
@@ -66,6 +66,7 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 - **Canvas & Aspect Ratio Transforms:** Live preview switching between 9:16 (TikTok/Reels/Shorts), 1:1 (Square), 16:9, and 4:3 with Stretch, Crop, or Letterbox (Pad) options.
 - **Realtime Rotation & Flip:** 90° clockwise, 90° counter-clockwise, 180°, and horizontal/vertical flips.
 - **Audio Gain Booster:** Amplify audio volume up to +20 dB applied both in the live player and in the final exported file.
+- **Vegas-Style Frame Blending:** Load 90–359 FPS footage (120, 144, 165, 240, 300 FPS...) and export a smooth 60 FPS clip where the extra frames are merged with the same temporal box resample Sony / MAGIX Vegas applies (e.g. 240→60 = weights 1-2-2-2-1, 144→60 = 2.4 frames per output frame), producing natural motion blur. NTSC rates (119.88 / 239.76) blend to 59.94. Sources under 90 FPS or at 360 FPS and above are blocked automatically.
 - **Precision Keyboard Controls:** Frame-by-frame stepping with arrow keys, quick 5-second jump shortcuts, and playback toggle via Space or K.
 
 ### 4. Realtime Queue & Hardware Diagnostics

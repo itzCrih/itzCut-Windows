@@ -9,8 +9,8 @@ import {
   RotateCw,
   Crop,
   Volume2,
-  Sparkles,
   Music,
+  Layers,
 } from 'lucide-react';
 import DropZone from '../components/DropZone';
 import MediaPreview from '../components/MediaPreview';
@@ -42,10 +42,23 @@ export default function TrimmerTab({
   const [exportAsGif, setExportAsGif] = useState(false);
   const [gifFps, setGifFps] = useState(15);
   const [audioExportFormat, setAudioExportFormat] = useState('original'); // 'original', 'mp3', 'wav', 'aac', 'flac', 'opus'
+  const [frameBlend, setFrameBlend] = useState(false);
 
   const [outputDir, setOutputDir] = useState(defaultOutputDir || '');
 
   const isAudio = isAudioMedia(currentFile, mediaInfo);
+
+  // Vegas-style frame blending (high-FPS source -> 60 fps). Eligibility is computed by the main process
+  // from the probed frame rate: below 90 fps there is nothing to blend, 360 fps and above is refused.
+  const blendInfo = mediaInfo?.video?.frameBlend || null;
+  const blendEligible = !isAudio && !!blendInfo?.eligible;
+  const blendActive = frameBlend && blendEligible && !exportAsGif;
+  const blendFramesPerOutput = blendInfo?.sourceFps ? (blendInfo.sourceFps * speed) / (blendInfo.outputFps || 60) : 0;
+
+  // Never carry the option over to a clip that cannot use it
+  useEffect(() => {
+    if (!blendEligible) setFrameBlend(false);
+  }, [blendEligible, currentFile?.path]);
 
   // Keep endTime updated if file loads later
   useEffect(() => {
@@ -63,6 +76,7 @@ export default function TrimmerTab({
       audioBoostDb > 0 ||
       loudnorm ||
       exportAsGif ||
+      blendActive ||
       speed !== 1);
 
   const effectiveLossless = losslessCopy && !requiresReencode;
@@ -89,7 +103,11 @@ export default function TrimmerTab({
     const baseName = currentFile.name.substring(0, currentFile.name.lastIndexOf('.')) || currentFile.name;
     const ext = isAudio
       ? (audioExportFormat === 'original' ? (currentFile.ext || 'mp3') : audioExportFormat)
-      : (exportAsGif ? 'gif' : (currentFile.ext || 'mp4'));
+      : exportAsGif
+      ? 'gif'
+      : effectiveLossless || ['mp4', 'mov', 'mkv', 'm4v'].includes(currentFile.ext)
+      ? (currentFile.ext || 'mp4')
+      : 'mp4'; // re-encodes produce H.264 + AAC, which WebM / AVI / WMV / FLV cannot carry
 
     const targetDir = outputDir || defaultOutputDir;
     const outputFile = `${targetDir}\\${baseName}_trimmed_${Date.now()}.${ext}`;
@@ -115,11 +133,14 @@ export default function TrimmerTab({
         gifFps,
         isAudioOnly: isAudio,
         audioExportFormat: ext,
+        frameBlend: blendActive,
       },
       title: isAudio
         ? `Trim Audio (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
         : exportAsGif
         ? `HD GIF Clip (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
+        : blendActive
+        ? `Frame Blend ${blendInfo.sourceFps}→${blendInfo.outputFps} fps (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
         : `Trim Clip (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`,
       inputName: currentFile.name,
     };
@@ -295,7 +316,7 @@ export default function TrimmerTab({
                     </div>
                     <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
                       {requiresReencode
-                        ? 'Disabled because rotation, aspect ratio, or audio filters require re-encoding.'
+                        ? 'Disabled because rotation, aspect ratio, frame blending, or audio filters require re-encoding.'
                         : 'Instant 0-second cut without re-encoding quality loss (-c copy).'}
                     </span>
                   </div>
@@ -452,6 +473,44 @@ export default function TrimmerTab({
                         </div>
                       )}
                     </div>
+
+                    {/* Vegas-style Frame Blending */}
+                    <label className="toggle-wrapper" title={blendEligible ? '' : blendInfo?.reason || ''}>
+                      <div
+                        className={`toggle-switch ${blendActive ? 'on' : ''}`}
+                        onClick={() => {
+                          if (!blendEligible) {
+                            if (blendInfo?.reason) onShowToast(blendInfo.reason, 'info');
+                            return;
+                          }
+                          if (exportAsGif) {
+                            onShowToast('Frame blending is not available for GIF exports.', 'info');
+                            return;
+                          }
+                          setFrameBlend(!frameBlend);
+                        }}
+                        style={{ opacity: blendEligible && !exportAsGif ? 1 : 0.45, cursor: blendEligible && !exportAsGif ? 'pointer' : 'not-allowed' }}
+                      >
+                        <div className="toggle-knob" />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Layers size={15} color={blendActive ? '#e6b422' : 'var(--text-muted)'} />
+                          <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                            Frame Blending {blendInfo?.sourceFps ? `(${blendInfo.sourceFps} → ${blendInfo.outputFps} fps)` : ''}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                          {!blendEligible
+                            ? (blendInfo?.reason || 'Load a high frame rate video (90–359 fps) to enable.')
+                            : blendActive
+                            ? (blendFramesPerOutput > 1.01
+                              ? `Vegas-style resample: ~${Math.round(blendFramesPerOutput * 100) / 100} source frames merged into every 60 fps frame for natural motion blur.`
+                              : 'At this playback speed there are no extra frames to merge: the clip is conformed to 60 fps.')
+                            : 'Merges the extra frames of high-FPS footage into a smooth 60 fps export with natural motion blur (like Vegas / After Effects).'}
+                        </span>
+                      </div>
+                    </label>
 
                     {/* Audio Gain Boost */}
                     {!muteAudio && (

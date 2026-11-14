@@ -32,7 +32,7 @@ jobs:
             choco install ffmpeg -y
           }
 
-      - name: Run itzCut Automated Test Suite (15 Tests)
+      - name: Run itzCut Automated Test Suite (18 Tests)
         run: npm test
 
       - name: Run Vite Production Build

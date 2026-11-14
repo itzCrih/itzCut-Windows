@@ -419,7 +419,7 @@ export default function SettingsTab({
                   <div>
                     <div style={{ fontSize: '13px', fontWeight: 600 }}>Software Updates</div>
                     <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      Current: <strong>v{updateState?.currentVersion || '2.4.2'}</strong>
+                      Current: <strong>v{updateState?.currentVersion || __APP_VERSION__}</strong>
                     </div>
                   </div>
                 </div>

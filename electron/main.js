@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const url = require('url');
 const { Readable } = require('stream');
 const FFmpegManager = require('./ffmpeg-manager');
 const Transcoder = require('./transcoder');
@@ -52,7 +51,7 @@ function createSplashScreen() {
     },
   });
 
-  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'), { query: { v: app.getVersion() } });
 
   splashWindow.on('closed', () => {
     splashWindow = null;
@@ -146,17 +145,18 @@ app.whenReady().then(async () => {
   const splashStartTime = Date.now();
   createSplashScreen();
 
-  // Ultra-robust Range streaming protocol handler for smooth scrubbing and infinite play without freezing
+  // Range streaming protocol handler for smooth scrubbing (fully async: never blocks the main process)
   protocol.handle('itzcut-media', async (request) => {
     try {
       const rawPath = request.url.replace(/^itzcut-media:\/\/local\//, '');
       const decodedPath = decodeURIComponent(rawPath);
 
-      if (!fs.existsSync(decodedPath)) {
+      let stat;
+      try {
+        stat = await fs.promises.stat(decodedPath);
+      } catch {
         return new Response('File not found', { status: 404 });
       }
-
-      const stat = fs.statSync(decodedPath);
       const fileSize = stat.size;
       const rangeHeader = request.headers.get('range');
 
@@ -184,10 +184,16 @@ app.whenReady().then(async () => {
       const ext = path.extname(decodedPath).toLowerCase();
       const contentType = mimeTypes[ext] || 'video/mp4';
 
-      if (rangeHeader) {
-        const parts = rangeHeader.replace(/bytes=/, '').split('-');
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const range = rangeHeader && /^bytes=(\d*)-(\d*)/.exec(rangeHeader.trim());
+      if (range && (range[1] || range[2])) {
+        // "bytes=500-", "bytes=500-999" and suffix ranges "bytes=-500"
+        let start = range[1] ? parseInt(range[1], 10) : Math.max(0, fileSize - parseInt(range[2], 10));
+        let end = range[1] && range[2] ? parseInt(range[2], 10) : fileSize - 1;
+        end = Math.min(end, fileSize - 1);
+        if (start > end || start >= fileSize) {
+          return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` } });
+        }
+        start = Math.max(0, start);
         const chunkSize = end - start + 1;
 
         const nodeStream = fs.createReadStream(decodedPath, { start, end });
@@ -225,15 +231,15 @@ app.whenReady().then(async () => {
   ffmpegManager = new FFmpegManager(appDataPath);
   transcoder = new Transcoder(ffmpegManager);
 
-  // Run FFmpeg & hardware detection in background while splash is shown
-  const detectPromise = ffmpegManager.detect().catch((err) => {
+  // FFmpeg & hardware detection runs fully async in the background; the UI never waits for it
+  // (the renderer asks for the status itself and gets the same in-flight promise).
+  ffmpegManager.detect().catch((err) => {
     console.error('FFmpeg detection error:', err);
   });
 
-  createWindow(async () => {
-    await detectPromise;
+  createWindow(() => {
     const elapsed = Date.now() - splashStartTime;
-    const minSplashDuration = 500; // Snappy 0.5s splash screen for ultra-fast startup feel
+    const minSplashDuration = 300; // Just long enough to avoid a splash "flash"
     const remainingDelay = Math.max(0, minSplashDuration - elapsed);
 
     setTimeout(() => {
@@ -252,6 +258,9 @@ app.whenReady().then(async () => {
         if (autoUpdater) {
           autoUpdater.checkForUpdates(false);
         }
+        // Housekeeping once the app is idle: drop stale preview proxies, pre-verify the blend engine.
+        ffmpegManager.cleanupPreviewCache().catch(() => {});
+        ffmpegManager.detect().then((s) => (s.available ? ffmpegManager.getBlendEngine() : null)).catch(() => {});
       }, 3500);
     }, remainingDelay);
   });
@@ -404,8 +413,8 @@ ipcMain.handle('media:extractFrame', async (event, { filePath, timestamp }) => {
 
 
 // IPC: FFmpeg Status & Downloader
-ipcMain.handle('ffmpeg:getStatus', async () => {
-  return await ffmpegManager.detect();
+ipcMain.handle('ffmpeg:getStatus', async (event, force = false) => {
+  return await ffmpegManager.detect(!!force);
 });
 
 ipcMain.handle('ffmpeg:download', async () => {

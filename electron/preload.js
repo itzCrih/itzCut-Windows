@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('itzCutAPI', {
   extractFrame: (filePath, timestamp) => ipcRenderer.invoke('media:extractFrame', { filePath, timestamp }),
 
   // FFmpeg Engine Status & Auto-Download
-  getFfmpegStatus: () => ipcRenderer.invoke('ffmpeg:getStatus'),
+  getFfmpegStatus: (force = false) => ipcRenderer.invoke('ffmpeg:getStatus', force),
   downloadFfmpeg: () => ipcRenderer.invoke('ffmpeg:download'),
   onFfmpegDownloadProgress: (callback) => {
     const listener = (event, data) => callback(data);

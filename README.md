@@ -8,7 +8,7 @@
 The ultra-fast, 100% local Windows suite for video and audio conversion, compression, lossless trimming, and studio editing.
 
 [![Platform](https://img.shields.io/badge/Platform-Windows_10_%7C_11_(x64)-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
-[![Version](https://img.shields.io/badge/Version-v2.5.0-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v2.6.0-e6b422?style=for-the-badge)](https://github.com/itzCrih/itzCut-Windows/releases/latest)
 [![Engine](https://img.shields.io/badge/FFmpeg-v7.1_Native-black?style=for-the-badge)](https://ffmpeg.org)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
 
@@ -16,13 +16,13 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 
 ### Download itzCut Desktop
 
-[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.5.0)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-Setup-2.5.0.exe)  
-[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.5.0)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-2.5.0-Portable.exe)
+[![Download Setup](https://img.shields.io/badge/Download_Installer-itzCut_Desktop_Setup_(v2.6.0)-e6b422?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.6.0/itzCut-Desktop-Setup-2.6.0.exe)  
+[![Download Portable](https://img.shields.io/badge/Download_Portable-itzCut_Desktop_Portable_(v2.6.0)-ffffff?style=for-the-badge&logo=windows&logoColor=black)](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.6.0/itzCut-Desktop-2.6.0-Portable.exe)
 
 | Package | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.5.0.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-Setup-2.5.0.exe) |
-| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.5.0-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.5.0/itzCut-Desktop-2.5.0-Portable.exe) |
+| **Windows Installer** | NSIS Setup `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-Setup-2.6.0.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.6.0/itzCut-Desktop-Setup-2.6.0.exe) |
+| **Standalone Portable** | Portable `.exe` | Windows 10 / 11 (x64) | [itzCut-Desktop-2.6.0-Portable.exe](https://github.com/itzCrih/itzCut-Windows/releases/download/v2.6.0/itzCut-Desktop-2.6.0-Portable.exe) |
 
 *Requires zero installation privileges for the portable build. Built-in Auto-Updater checks for future releases seamlessly on startup.*
 
@@ -43,10 +43,13 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 
 ### 1. Target Size & Social Media Compressor
 - **Discord Optimizations:** Instant target bit calculation for **8 MB** (Discord Free limit), **25 MB** (Nitro Basic), and **50 MB** (Nitro Boost).
-- **TikTok Profile (2-Pass VBR CFR):** Produces native constant frame-rate (CFR) MP4 streams with 20 Mbps target and 40 Mbps max ceiling, optimized for vertical feeds without re-compression degradation.
+- **TikTok Profile (2-Pass VBR):** True two-pass x264 VBR at 20 Mbps target / 40 Mbps ceiling (no CRF), producing native constant frame-rate (CFR) MP4 streams optimized for vertical feeds.
 - **CRF Quality Engine & Instant Frame Snapshot:** Granular Constant Rate Factor slider with instant quality presets and real-time source video frame snapshot preview. Sample video frames across the timeline with timestamp and resolution tags to inspect clarity before encoding.
 
 ### 2. High-Performance Format Converter
+- **Batch Import:** Drag & drop files or whole folders, or use **Browse Files** / **Import Folder**. A list of loaded files appears and Convert queues all of them at once with the same settings.
+- **Mode Tabs & Encoding Speed Slider:** Compress / Convert / Audio modes as animated tabs, an inline CFR/VFR selector next to the FPS field, a CRF value tag, and an encoding-speed slider (the `slower` preset is only offered on capable PCs: 12+ threads and 16 GB RAM).
+- **Custom Dropdowns:** Native selects replaced by themed menus showing the name with a muted detail (e.g. `Full HD · 1920×1080`).
 - **Video Encoders:** MP4 (H.264 / NVENC / QSV / AMF / x264), MP4 (H.265 / HEVC), WebM (VP9), MKV, MOV (ProRes / PCM compatibility with instant proxy streaming), and Animated GIF.
 - **Dedicated Audio Converter:** Automatic mode switch when audio files are loaded:
   - MP3 (High-rate VBR)
@@ -55,7 +58,7 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
   - AAC (Advanced Audio Coding)
   - OGG Vorbis
   - Opus (Low-latency voice & music)
-- **Resolution & Framerate Control:** Native Passthrough, 4K UHD, 1440p, 1080p, 720p, 480p, or Custom Resolution with Pad, Crop, or Stretch. Framerate presets for 20, 23.976, 24, 25, 29.97, 30, 59.94, and 60 FPS, plus custom numeric input up to 300 FPS and Constant (CFR) vs Variable (VFR) cadence modes.
+- **Resolution & Framerate Control:** Native Passthrough, 4K UHD, 1440p, 1080p, 720p, 480p, or Custom Resolution with Pad, Crop, or Stretch. Framerate presets for 20, 23.976, 24, 25, 29.97, 30, 59.94, and 60 FPS, plus custom numeric input up to 300 FPS and Constant (CFR) vs Variable (VFR) cadence modes. VFR now truly drops duplicate frames (e.g. 360 → 244 frames with identical duration) and is recognized as VFR by MediaInfo, even with NVENC.
 - **Turbo CRF & FastStart:** Turbo analysis pass (`-fastfirstpass 1`) and Web/Discord FastStart (`-movflags +faststart`) for instant remote streaming.
 - **Privacy Stripper:** Optional removal of EXIF tags, GPS metadata, and container tracking details.
 
@@ -65,7 +68,9 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 - **Instant Stream Copy:** True 0-second lossless cut (`-c copy`) whenever re-encoding filters are not requested.
 - **Canvas & Aspect Ratio Transforms:** Live preview switching between 9:16 (TikTok/Reels/Shorts), 1:1 (Square), 16:9, and 4:3 with Stretch, Crop, or Letterbox (Pad) options.
 - **Realtime Rotation & Flip:** 90° clockwise, 90° counter-clockwise, 180°, and horizontal/vertical flips.
-- **Audio Gain Booster:** Amplify audio volume up to +20 dB applied both in the live player and in the final exported file.
+- **Audio Gain Booster & Quick Mute:** Amplify audio up to +20 dB in the live player and in the export. Click the speaker icon next to the slider to mute (animated red slash, slider collapses). Available in both Convert and Trimmer.
+- **Multiple Audio Tracks:** Videos with several audio tracks (e.g. OBS) get a track panel under the player: mute tracks individually and choose **Keep separate** or **Merge into one**. Lossless cuts copy the video untouched and only re-encode the audio.
+- **Organized Studio Panel:** Studio Enhancements is split into Picture / Audio / Export sections; Picture (orientation, aspect ratio, fit mode, frame blending) lives next to the cut points, and the 90° rotated preview is no longer cropped.
 - **Vegas-Style Frame Blending:** Load 90–359 FPS footage (120, 144, 165, 240, 300 FPS...) and export a smooth 60 FPS clip where the extra frames are merged with the same temporal box resample Sony / MAGIX Vegas applies (e.g. 240→60 = weights 1-2-2-2-1, 144→60 = 2.4 frames per output frame), producing natural motion blur. NTSC rates (119.88 / 239.76) blend to 59.94. Sources under 90 FPS or at 360 FPS and above are blocked automatically.
 - **Precision Keyboard Controls:** Frame-by-frame stepping with arrow keys, quick 5-second jump shortcuts, and playback toggle via Space or K.
 
@@ -74,7 +79,15 @@ The ultra-fast, 100% local Windows suite for video and audio conversion, compres
 - **Selectable Logs & One-Click Copy:** View raw FFmpeg console output with selectable text and a dedicated "Copy Logs" button for quick troubleshooting.
 - **Clean Cancellation:** Cancelling an active encode immediately halts child processes, removes the job entry, and deletes temporary scratch files from disk.
 - **Render Completion Sound:** Synthesized Web Audio chime to notify you the instant an export finishes.
+- **Real Job Queue:** Jobs run one at a time by default (configurable up to 4 in Settings) instead of launching all FFmpeg processes at once.
+- **Safe Exit:** Closing the app during an encode asks for confirmation, then stops FFmpeg and deletes partial files.
+- **Sleep Prevention & Taskbar Progress:** The PC stays awake while the queue runs and progress is shown on the taskbar icon.
+- **Lighter Previews:** The HEVC preview proxy tries direct GPU playback first, runs at low priority and stops as soon as you leave the file or the Trimmer.
 - **Instant Cached Hardware Detection:** Probes GPU encoders and caches specs for <1 second subsequent launches.
+
+### 5. Settings & Security
+- **Preferences:** Persistent default output folder, file name suffix, simultaneous jobs, GPU/CPU encoder, CPU priority, GPU decoding (off by default, automatic CPU fallback), keep-PC-awake, desktop notification, completion sound, accent color. Every category can be collapsed or expanded.
+- **Hardened App:** Sandboxed windows, preview streamer restricted to video/audio files, "Play" only opens media files (never executables), validated parameters before they reach FFmpeg, and exports can never overwrite the source or a previous export.
 
 ---
 

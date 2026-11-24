@@ -127,6 +127,8 @@ export default function AudioPreview({
         }
       }
 
+      const accentColor =
+        getComputedStyle(document.documentElement).getPropertyValue('--gold-primary').trim() || '#fbbf24';
       const barWidth = (width / bars) - 2;
       const centerY = height / 2;
 
@@ -136,7 +138,7 @@ export default function AudioPreview({
 
         // Amber to purple neon gradient
         const gradient = ctx.createLinearGradient(0, centerY - barHeight / 2, 0, centerY + barHeight / 2);
-        gradient.addColorStop(0, '#e6b422');
+        gradient.addColorStop(0, accentColor);
         gradient.addColorStop(0.5, '#f59e0b');
         gradient.addColorStop(1, '#a855f7');
 

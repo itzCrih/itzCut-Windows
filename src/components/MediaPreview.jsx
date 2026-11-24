@@ -11,6 +11,19 @@ import {
 } from 'lucide-react';
 import { formatTimecode, formatSeconds } from '../utils/formatters';
 
+let hevcSupport = null;
+/** Whether this Chromium build can decode HEVC (hardware decoder + Windows HEVC extension). */
+function canPlayHevc() {
+  if (hevcSupport === null) {
+    try {
+      hevcSupport = document.createElement('video').canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') !== '';
+    } catch {
+      hevcSupport = false;
+    }
+  }
+  return hevcSupport;
+}
+
 export default function MediaPreview({
   filePath,
   duration = 0,
@@ -50,11 +63,29 @@ export default function MediaPreview({
   const wasPlayingBeforeDragRef = useRef(false);
   const rafSeekRef = useRef(null);
 
-  // Reset proxy state on file change
+  // Size of the preview frame, needed to lay out a rotated video.
+  const frameRef = useRef(null);
+  const [frameSize, setFrameSize] = useState(null);
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return undefined;
+    const observer = new ResizeObserver(() => setFrameSize({ width: el.clientWidth, height: el.clientHeight }));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const currentFileRef = useRef(filePath);
+  currentFileRef.current = filePath;
+
+  // Reset proxy state on file change. Leaving a file (or the Trimmer) stops its proxy encode:
+  // otherwise a multi-hour source keeps FFmpeg busy in the background for nothing.
   useEffect(() => {
     setProxyPath(null);
     setIsGeneratingProxy(false);
     setProxyError(null);
+    return () => {
+      if (filePath) window.itzCutAPI?.cancelPreviewProxy?.(filePath);
+    };
   }, [filePath]);
 
   // Request high-speed preview proxy when needed
@@ -66,23 +97,24 @@ export default function MediaPreview({
     setProxyError(null);
     try {
       const pPath = await window.itzCutAPI.getPreviewProxy(filePath);
-      if (pPath) {
-        setProxyPath(pPath);
-      }
+      if (pPath && currentFileRef.current === filePath) setProxyPath(pPath);
     } catch (err) {
-      console.warn('Failed to generate preview proxy:', err);
-      setProxyError(err.message);
+      if (currentFileRef.current === filePath && !/canceled/i.test(err.message)) {
+        console.warn('Failed to generate preview proxy:', err);
+        setProxyError(err.message);
+      }
     } finally {
-      setIsGeneratingProxy(false);
+      if (currentFileRef.current === filePath) setIsGeneratingProxy(false);
     }
   }, [filePath, isGeneratingProxy, proxyPath]);
 
-  // Auto-trigger proxy if file metadata explicitly flags incompatible codecs/container
+  // Auto-trigger the proxy when the container / codec cannot play natively. HEVC is tried
+  // natively first: Chromium decodes it on the GPU when Windows has the HEVC extension.
   useEffect(() => {
-    if (mediaInfo?.needsPreviewProxy && !proxyPath && !isGeneratingProxy) {
-      requestProxy();
-    }
-  }, [mediaInfo, proxyPath, isGeneratingProxy, requestProxy]);
+    if (proxyPath || isGeneratingProxy || proxyError || !mediaInfo) return;
+    const hevcUnsupported = mediaInfo.video?.codec === 'hevc' && !canPlayHevc();
+    if (mediaInfo.needsPreviewProxy || hevcUnsupported) requestProxy();
+  }, [mediaInfo, proxyPath, isGeneratingProxy, proxyError, requestProxy]);
 
 
   useEffect(() => {
@@ -208,9 +240,9 @@ export default function MediaPreview({
   }, [videoDuration, duration, dispatchVideoSeek]);
 
   const stepFrame = useCallback((frames) => {
-    const step = frames * 0.0333; // ~1 frame at 30fps
-    smoothSeek(currentTime + step);
-  }, [currentTime, smoothSeek]);
+    const fps = mediaInfo?.video?.fps > 0 ? mediaInfo.video.fps : 30;
+    smoothSeek(currentTime + frames / fps);
+  }, [currentTime, smoothSeek, mediaInfo]);
 
   // Keyboard Shortcuts (Space / K for Play/Pause, ArrowLeft / ArrowRight for 1 Frame)
   useEffect(() => {
@@ -329,21 +361,34 @@ export default function MediaPreview({
   const effectiveWidth = isRotated90 ? naturalDimensions.height : naturalDimensions.width;
   const effectiveHeight = isRotated90 ? naturalDimensions.width : naturalDimensions.height;
 
-  let containerAspectStyle = {};
-  if (aspectRatio === '9:16') {
-    containerAspectStyle = { aspectRatio: '9 / 16', maxHeight: '480px', width: 'auto' };
-  } else if (aspectRatio === '1:1') {
-    containerAspectStyle = { aspectRatio: '1 / 1', maxHeight: '450px', width: 'auto' };
-  } else if (aspectRatio === '4:3') {
-    containerAspectStyle = { aspectRatio: '4 / 3', maxHeight: '450px', width: 'auto' };
-  } else if (aspectRatio === '16:9') {
-    containerAspectStyle = { aspectRatio: '16 / 9', maxHeight: '480px', width: '100%' };
+  // The frame gets an explicit height so its width follows from the aspect ratio (the video inside
+  // may be absolutely positioned and cannot size it).
+  const frameHeight = 'min(480px, 56vh)';
+  const ratios = { '9:16': '9 / 16', '1:1': '1 / 1', '4:3': '4 / 3' };
+  let containerAspectStyle;
+  if (aspectRatio === '16:9') {
+    containerAspectStyle = { aspectRatio: '16 / 9', maxHeight: frameHeight, width: '100%' };
   } else {
     containerAspectStyle = {
-      aspectRatio: `${effectiveWidth} / ${effectiveHeight}`,
-      maxHeight: '480px',
+      aspectRatio: ratios[aspectRatio] || `${effectiveWidth} / ${effectiveHeight}`,
+      height: frameHeight,
       maxWidth: '100%',
-      width: 'auto',
+    };
+  }
+
+  // A 90° turn swaps the picture's footprint: the video element is laid out with the frame's
+  // height as its width (and vice versa) and then rotated, so it fills the frame exactly.
+  let videoLayout = { width: '100%', height: '100%', transform: transformStyle };
+  if (isRotated90 && frameSize) {
+    videoLayout = {
+      position: 'absolute',
+      left: '50%',
+      top: '50%',
+      width: frameSize.height,
+      height: frameSize.width,
+      maxWidth: 'none',
+      maxHeight: 'none',
+      transform: `translate(-50%, -50%) ${transformStyle}`,
     };
   }
 
@@ -356,6 +401,7 @@ export default function MediaPreview({
       {/* Live Video Preview Box: clean, uncluttered, with full breathing room */}
       <div className="player-video-box">
         <div
+          ref={frameRef}
           style={{
             ...containerAspectStyle,
             display: 'flex',
@@ -363,7 +409,7 @@ export default function MediaPreview({
             justifyContent: 'center',
             overflow: 'hidden',
             background: '#000000',
-            border: aspectRatio !== 'original' ? '1px dashed rgba(230, 180, 34, 0.5)' : 'none',
+            border: aspectRatio !== 'original' ? '1px dashed rgba(var(--accent-rgb), 0.5)' : 'none',
             borderRadius: '4px',
             position: 'relative',
           }}
@@ -371,11 +417,17 @@ export default function MediaPreview({
           {isGeneratingProxy && (
             <div className="preview-loading-overlay">
               <RefreshCw size={28} className="spin" style={{ color: 'var(--gold-primary)' }} />
-              <div style={{ fontWeight: 600, fontSize: '13.5px' }}>
-                Preparing Ultra-Fast Smooth Preview...
+              <div style={{ fontWeight: 600, fontSize: '13.5px' }}>Preparing a smooth preview…</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', maxWidth: 360, textAlign: 'center' }}>
+                This format cannot play directly, so a lightweight preview copy is being made. Exports never wait for it, and it stops when you leave the file.
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Optimizing video decoder for master codec stream
+            </div>
+          )}
+          {!isGeneratingProxy && proxyError && (
+            <div className="preview-loading-overlay">
+              <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-error)' }}>Preview unavailable</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', maxWidth: 360, textAlign: 'center' }}>
+                Cut points can still be typed in, and the export works normally.
               </div>
             </div>
           )}
@@ -384,10 +436,8 @@ export default function MediaPreview({
             ref={videoRef}
             src={safeVideoUrl}
             style={{
-              width: '100%',
-              height: '100%',
+              ...videoLayout,
               objectFit: videoObjectFit,
-              transform: transformStyle,
               transition: 'transform 0.15s ease',
               display: 'block',
             }}

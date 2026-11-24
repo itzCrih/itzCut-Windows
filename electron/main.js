@@ -1,15 +1,23 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, powerSaveBlocker, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
 const FFmpegManager = require('./ffmpeg-manager');
 const Transcoder = require('./transcoder');
 const AutoUpdater = require('./updater');
+const { VIDEO_EXTS, AUDIO_EXTS, isMediaFile, mimeTypeFor } = require('./media-types');
+
+const fsp = fs.promises;
+const APP_ID = 'it.itzcrih.itzcut.desktop';
+/** Folder imports stop here; a whole drive dropped by mistake must not freeze the app. */
+const FOLDER_IMPORT_LIMIT = 500;
+const FOLDER_IMPORT_DEPTH = 4;
 
 // Optimization flags for stripped Windows 10/11 editions and low RAM usage
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport');
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
+app.setAppUserModelId(APP_ID);
 
 // Register custom privileged scheme for secure local video streaming
 protocol.registerSchemesAsPrivileged([
@@ -31,6 +39,19 @@ let ffmpegManager = null;
 let transcoder = null;
 let autoUpdater = null;
 
+/** What the renderer reports about its queue: drives the taskbar, sleep blocking and the quit prompt. */
+const queueState = { active: 0, queued: 0, progress: -1, keepAwake: true };
+let powerBlockerId = null;
+let quitConfirmed = false;
+
+function sendToRenderer(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+function isHttpUrl(value) {
+  return typeof value === 'string' && (value.startsWith('https://') || value.startsWith('http://'));
+}
+
 function createSplashScreen() {
   const iconPath = path.join(__dirname, 'assets/icon.ico');
 
@@ -48,6 +69,7 @@ function createSplashScreen() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
     },
   });
 
@@ -75,24 +97,20 @@ function createWindow(onReady = null) {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
   // Securely intercept any external link or popup and open in user's default browser
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
-    if (targetUrl.startsWith('https:') || targetUrl.startsWith('http:')) {
-      shell.openExternal(targetUrl);
-    }
+    if (isHttpUrl(targetUrl)) shell.openExternal(targetUrl);
     return { action: 'deny' };
   });
 
   mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
     if (targetUrl !== mainWindow.webContents.getURL()) {
       event.preventDefault();
-      if (targetUrl.startsWith('https:') || targetUrl.startsWith('http:')) {
-        shell.openExternal(targetUrl);
-      }
+      if (isHttpUrl(targetUrl)) shell.openExternal(targetUrl);
     }
   });
 
@@ -102,14 +120,7 @@ function createWindow(onReady = null) {
     } else {
       mainWindow.show();
       mainWindow.focus();
-
-      // Initialize AutoUpdater with mainWindow
-      autoUpdater = new AutoUpdater(mainWindow);
-      setTimeout(() => {
-        if (autoUpdater) {
-          autoUpdater.checkForUpdates(false);
-        }
-      }, 3500);
+      startAutoUpdater();
     }
   });
 
@@ -127,105 +138,108 @@ function createWindow(onReady = null) {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  mainWindow.on('maximize', () => {
-    mainWindow.webContents.send('window:state-changed', { maximized: true });
+  mainWindow.on('maximize', () => sendToRenderer('window:state-changed', { maximized: true }));
+  mainWindow.on('unmaximize', () => sendToRenderer('window:state-changed', { maximized: false }));
+  mainWindow.on('minimize', () => sendToRenderer('app:background', true));
+  mainWindow.on('restore', () => sendToRenderer('app:background', false));
+
+  // Closing while encodes run would orphan hours of work: ask first, then stop FFmpeg cleanly.
+  mainWindow.on('close', (event) => {
+    const pending = queueState.active + queueState.queued + (transcoder ? transcoder.runningJobs.size : 0);
+    if (quitConfirmed || pending === 0) return;
+    event.preventDefault();
+    const running = Math.max(queueState.active, transcoder ? transcoder.runningJobs.size : 0);
+    dialog
+      .showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Keep Encoding', 'Quit Anyway'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Encoding in progress',
+        message: running > 0 ? `${running} encode${running === 1 ? ' is' : 's are'} still running.` : 'Jobs are still waiting in the queue.',
+        detail: 'Quitting stops every job and deletes the unfinished files.',
+      })
+      .then(({ response }) => {
+        if (response !== 1) return;
+        quitConfirmed = true;
+        app.quit();
+      });
   });
-  mainWindow.on('unmaximize', () => {
-    mainWindow.webContents.send('window:state-changed', { maximized: false });
-  });
-  mainWindow.on('minimize', () => {
-    mainWindow.webContents.send('app:background', true);
-  });
-  mainWindow.on('restore', () => {
-    mainWindow.webContents.send('app:background', false);
-  });
+}
+
+function startAutoUpdater() {
+  autoUpdater = new AutoUpdater(mainWindow);
+  setTimeout(() => {
+    if (autoUpdater) autoUpdater.checkForUpdates(false);
+    // Housekeeping once the app is idle: drop stale preview proxies, pre-verify the blend engine.
+    ffmpegManager.cleanupPreviewCache().catch(() => {});
+    ffmpegManager.detect().then((s) => (s.available ? ffmpegManager.getBlendEngine() : null)).catch(() => {});
+  }, 3500);
+}
+
+/** Serves local media to the <video> element with HTTP range support (never blocks the main process). */
+async function handleMediaRequest(request) {
+  try {
+    const decodedPath = path.normalize(decodeURIComponent(request.url.replace(/^itzcut-media:\/\/local\//, '')));
+    // Only media files (and the app's own preview proxies) are served, never arbitrary files.
+    const inPreviewDir = decodedPath.toLowerCase().startsWith(FFmpegManager.previewDir().toLowerCase() + path.sep);
+    if (!path.isAbsolute(decodedPath) || (!isMediaFile(decodedPath) && !inPreviewDir)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+
+    let stat;
+    try {
+      stat = await fsp.stat(decodedPath);
+    } catch {
+      return new Response('File not found', { status: 404 });
+    }
+    if (!stat.isFile()) return new Response('Not a file', { status: 404 });
+
+    const fileSize = stat.size;
+    const contentType = mimeTypeFor(decodedPath).startsWith('application/') ? 'video/mp4' : mimeTypeFor(decodedPath);
+    const rangeHeader = request.headers.get('range');
+    const range = rangeHeader && /^bytes=(\d*)-(\d*)/.exec(rangeHeader.trim());
+
+    if (range && (range[1] || range[2])) {
+      // "bytes=500-", "bytes=500-999" and suffix ranges "bytes=-500"
+      let start = range[1] ? parseInt(range[1], 10) : Math.max(0, fileSize - parseInt(range[2], 10));
+      let end = range[1] && range[2] ? parseInt(range[2], 10) : fileSize - 1;
+      end = Math.min(end, fileSize - 1);
+      if (start > end || start >= fileSize) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` } });
+      }
+      start = Math.max(0, start);
+
+      return new Response(Readable.toWeb(fs.createReadStream(decodedPath, { start, end })), {
+        status: 206,
+        statusText: 'Partial Content',
+        headers: {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(end - start + 1),
+          'Content-Type': contentType,
+        },
+      });
+    }
+
+    return new Response(Readable.toWeb(fs.createReadStream(decodedPath)), {
+      status: 200,
+      headers: {
+        'Content-Length': String(fileSize),
+        'Accept-Ranges': 'bytes',
+        'Content-Type': contentType,
+      },
+    });
+  } catch (err) {
+    return new Response(err.message, { status: 500 });
+  }
 }
 
 app.whenReady().then(async () => {
   const splashStartTime = Date.now();
   createSplashScreen();
 
-  // Range streaming protocol handler for smooth scrubbing (fully async: never blocks the main process)
-  protocol.handle('itzcut-media', async (request) => {
-    try {
-      const rawPath = request.url.replace(/^itzcut-media:\/\/local\//, '');
-      const decodedPath = decodeURIComponent(rawPath);
-
-      let stat;
-      try {
-        stat = await fs.promises.stat(decodedPath);
-      } catch {
-        return new Response('File not found', { status: 404 });
-      }
-      const fileSize = stat.size;
-      const rangeHeader = request.headers.get('range');
-
-      const mimeTypes = {
-        '.mp4': 'video/mp4',
-        '.m4v': 'video/mp4',
-        '.webm': 'video/webm',
-        '.mkv': 'video/mp4',
-        '.mov': 'video/mp4',
-        '.avi': 'video/x-msvideo',
-        '.wmv': 'video/x-ms-wmv',
-        '.flv': 'video/x-flv',
-        '.ts': 'video/mp2t',
-        '.mp3': 'audio/mpeg',
-        '.wav': 'audio/wav',
-        '.aac': 'audio/aac',
-        '.flac': 'audio/flac',
-        '.ogg': 'audio/ogg',
-        '.opus': 'audio/ogg',
-        '.m4a': 'audio/mp4',
-        '.wma': 'audio/x-ms-wma',
-        '.aiff': 'audio/aiff',
-        '.aif': 'audio/aiff',
-      };
-      const ext = path.extname(decodedPath).toLowerCase();
-      const contentType = mimeTypes[ext] || 'video/mp4';
-
-      const range = rangeHeader && /^bytes=(\d*)-(\d*)/.exec(rangeHeader.trim());
-      if (range && (range[1] || range[2])) {
-        // "bytes=500-", "bytes=500-999" and suffix ranges "bytes=-500"
-        let start = range[1] ? parseInt(range[1], 10) : Math.max(0, fileSize - parseInt(range[2], 10));
-        let end = range[1] && range[2] ? parseInt(range[2], 10) : fileSize - 1;
-        end = Math.min(end, fileSize - 1);
-        if (start > end || start >= fileSize) {
-          return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` } });
-        }
-        start = Math.max(0, start);
-        const chunkSize = end - start + 1;
-
-        const nodeStream = fs.createReadStream(decodedPath, { start, end });
-        const webStream = Readable.toWeb(nodeStream);
-
-        return new Response(webStream, {
-          status: 206,
-          statusText: 'Partial Content',
-          headers: {
-            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-            'Accept-Ranges': 'bytes',
-            'Content-Length': chunkSize.toString(),
-            'Content-Type': contentType,
-          },
-        });
-      } else {
-        const nodeStream = fs.createReadStream(decodedPath);
-        const webStream = Readable.toWeb(nodeStream);
-
-        return new Response(webStream, {
-          status: 200,
-          headers: {
-            'Content-Length': fileSize.toString(),
-            'Accept-Ranges': 'bytes',
-            'Content-Type': contentType,
-          },
-        });
-      }
-    } catch (err) {
-      return new Response(err.message, { status: 500 });
-    }
-  });
+  protocol.handle('itzcut-media', handleMediaRequest);
 
   const appDataPath = app.getPath('userData');
   ffmpegManager = new FFmpegManager(appDataPath);
@@ -251,17 +265,7 @@ app.whenReady().then(async () => {
         mainWindow.show();
         mainWindow.focus();
       }
-
-      // Initialize AutoUpdater with mainWindow
-      autoUpdater = new AutoUpdater(mainWindow);
-      setTimeout(() => {
-        if (autoUpdater) {
-          autoUpdater.checkForUpdates(false);
-        }
-        // Housekeeping once the app is idle: drop stale preview proxies, pre-verify the blend engine.
-        ffmpegManager.cleanupPreviewCache().catch(() => {});
-        ffmpegManager.detect().then((s) => (s.available ? ffmpegManager.getBlendEngine() : null)).catch(() => {});
-      }, 3500);
+      startAutoUpdater();
     }, remainingDelay);
   });
 
@@ -270,6 +274,19 @@ app.whenReady().then(async () => {
       createWindow();
     }
   });
+});
+
+// Never leave FFmpeg running after the window is gone: stop encodes (their partial files are
+// removed) and any preview proxy, then quit for real.
+let cleanedUp = false;
+app.on('before-quit', (event) => {
+  if (cleanedUp || !transcoder) return;
+  event.preventDefault();
+  cleanedUp = true;
+  quitConfirmed = true;
+  if (ffmpegManager) ffmpegManager.cancelAllPreviewProxies();
+  const timeout = new Promise((resolve) => setTimeout(resolve, 4000));
+  Promise.race([transcoder.cancelAll(), timeout]).finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => {
@@ -303,42 +320,117 @@ ipcMain.handle('window:isMaximized', () => {
 
 // IPC: Safe External URL Opener
 ipcMain.handle('shell:openExternal', async (event, targetUrl) => {
-  if (targetUrl && (targetUrl.startsWith('https://') || targetUrl.startsWith('http://'))) {
+  if (isHttpUrl(targetUrl)) {
     await shell.openExternal(targetUrl);
     return true;
   }
   return false;
 });
 
+async function describeFile(filePath) {
+  const stat = await fsp.stat(filePath);
+  return {
+    path: filePath,
+    name: path.basename(filePath),
+    size: stat.size,
+    ext: path.extname(filePath).toLowerCase().replace('.', ''),
+  };
+}
+
+/**
+ * Turns dropped or picked paths into media file descriptions. Folders are walked (a few levels
+ * deep, hidden folders skipped) and everything that is not audio or video is left out.
+ */
+async function expandMediaPaths(paths) {
+  const files = [];
+  const seen = new Set();
+  let skipped = 0;
+  let truncated = false;
+
+  const addFile = async (filePath) => {
+    const key = filePath.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (!isMediaFile(filePath)) {
+      skipped += 1;
+      return;
+    }
+    if (files.length >= FOLDER_IMPORT_LIMIT) {
+      truncated = true;
+      return;
+    }
+    try {
+      files.push(await describeFile(filePath));
+    } catch {
+      skipped += 1;
+    }
+  };
+
+  const walk = async (directory, depth) => {
+    let entries;
+    try {
+      entries = await fsp.readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    for (const entry of entries) {
+      if (files.length >= FOLDER_IMPORT_LIMIT) {
+        truncated = true;
+        return;
+      }
+      const fullPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < FOLDER_IMPORT_DEPTH && !entry.name.startsWith('.') && !entry.name.startsWith('$')) await walk(fullPath, depth + 1);
+      } else if (entry.isFile()) {
+        await addFile(fullPath);
+      }
+    }
+  };
+
+  for (const rawPath of Array.isArray(paths) ? paths : []) {
+    if (typeof rawPath !== 'string' || !path.isAbsolute(rawPath)) continue;
+    let stat;
+    try {
+      stat = await fsp.stat(rawPath);
+    } catch {
+      skipped += 1;
+      continue;
+    }
+    if (stat.isDirectory()) await walk(rawPath, 0);
+    else if (stat.isFile()) await addFile(rawPath);
+  }
+  return { files, skipped, truncated, limit: FOLDER_IMPORT_LIMIT };
+}
+
 ipcMain.handle('dialog:openFile', async (event, options = {}) => {
   const defaultFilters = [
-    { name: 'Media Files', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'flv', 'wmv', 'm4v', 'ts', '3gp', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'opus', 'wma', 'aiff', 'gif'] },
-    { name: 'Video Files', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'flv', 'wmv', 'm4v', 'ts', '3gp', 'gif'] },
-    { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'opus', 'wma', 'aiff'] },
+    { name: 'Media Files', extensions: [...VIDEO_EXTS, ...AUDIO_EXTS] },
+    { name: 'Video Files', extensions: VIDEO_EXTS },
+    { name: 'Audio Files', extensions: AUDIO_EXTS },
   ];
 
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: options.title || 'Select a media file to convert or trim',
-    properties: [options.multi ? 'multiSelections' : 'openFile'],
-    filters: options.filters || defaultFilters,
+    title: options.title || (options.multi ? 'Select media files' : 'Select a media file'),
+    properties: options.multi ? ['openFile', 'multiSelections'] : ['openFile'],
+    filters: Array.isArray(options.filters) ? options.filters : defaultFilters,
   });
 
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
-
-  const fileInfos = result.filePaths.map((fp) => {
-    const stats = fs.statSync(fp);
-    return {
-      path: fp,
-      name: path.basename(fp),
-      size: stats.size,
-      ext: path.extname(fp).toLowerCase().replace('.', ''),
-    };
-  });
-
-  return options.multi ? fileInfos : fileInfos[0];
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const fileInfos = (await Promise.all(result.filePaths.map((fp) => describeFile(fp).catch(() => null)))).filter(Boolean);
+  return options.multi ? fileInfos : fileInfos[0] || null;
 });
+
+ipcMain.handle('dialog:openMediaFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import every video and audio file in a folder',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return expandMediaPaths(result.filePaths);
+});
+
+ipcMain.handle('media:expandPaths', (event, paths) => expandMediaPaths(paths));
 
 ipcMain.handle('dialog:selectFolder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -353,34 +445,32 @@ ipcMain.handle('dialog:selectFolder', async () => {
 });
 
 ipcMain.handle('shell:showInFolder', async (event, filePath) => {
-  if (filePath && fs.existsSync(filePath)) {
-    shell.showItemInFolder(filePath);
+  if (typeof filePath === 'string' && fs.existsSync(filePath)) {
+    if (fs.statSync(filePath).isDirectory()) await shell.openPath(filePath);
+    else shell.showItemInFolder(filePath);
     return true;
   }
   return false;
 });
 
+// Only media files are opened with their default app: never executables or scripts.
 ipcMain.handle('shell:openFile', async (event, filePath) => {
-  if (filePath && fs.existsSync(filePath)) {
-    shell.openPath(filePath);
-    return true;
+  if (isMediaFile(filePath) && fs.existsSync(filePath)) {
+    const error = await shell.openPath(filePath);
+    return error === '';
   }
   return false;
 });
 
-ipcMain.handle('app:getDefaultOutputDir', () => {
+ipcMain.handle('app:getDefaultOutputDir', async () => {
   let videosDir;
   try {
     videosDir = app.getPath('videos');
-  } catch (e) {
+  } catch {
     videosDir = app.getPath('documents');
   }
   const itzCutDir = path.join(videosDir, 'itzCut');
-  if (!fs.existsSync(itzCutDir)) {
-    try {
-      fs.mkdirSync(itzCutDir, { recursive: true });
-    } catch (e) {}
-  }
+  await fsp.mkdir(itzCutDir, { recursive: true }).catch(() => {});
   return itzCutDir;
 });
 
@@ -393,7 +483,7 @@ ipcMain.handle('media:probe', async (event, filePath) => {
   }
 });
 
-// IPC: Preview Proxy Generator for Non-Native Formats (ProRes, PCM, HEVC, MKV, AVI, etc.)
+// IPC: Preview Proxy Generator for Non-Native Formats (ProRes, PCM, HEVC in MKV, AVI, etc.)
 ipcMain.handle('media:getPreviewProxy', async (event, filePath) => {
   try {
     return await ffmpegManager.ensurePreviewProxy(filePath);
@@ -401,6 +491,8 @@ ipcMain.handle('media:getPreviewProxy', async (event, filePath) => {
     throw new Error(err.message);
   }
 });
+
+ipcMain.handle('media:cancelPreviewProxy', (event, filePath) => ffmpegManager.cancelPreviewProxy(filePath));
 
 // IPC: Extract single frame snapshot from video
 ipcMain.handle('media:extractFrame', async (event, { filePath, timestamp }) => {
@@ -411,7 +503,6 @@ ipcMain.handle('media:extractFrame', async (event, { filePath, timestamp }) => {
   }
 });
 
-
 // IPC: FFmpeg Status & Downloader
 ipcMain.handle('ffmpeg:getStatus', async (event, force = false) => {
   return await ffmpegManager.detect(!!force);
@@ -419,57 +510,81 @@ ipcMain.handle('ffmpeg:getStatus', async (event, force = false) => {
 
 ipcMain.handle('ffmpeg:download', async () => {
   try {
-    return await ffmpegManager.downloadStaticBuild((progressData) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ffmpeg:download-progress', progressData);
-      }
-    });
+    return await ffmpegManager.downloadStaticBuild((progressData) => sendToRenderer('ffmpeg:download-progress', progressData));
   } catch (err) {
     throw new Error(err.message);
   }
 });
 
+// IPC: Engine preferences (encoder choice, process priority, GPU decoding)
+ipcMain.handle('engine:setSettings', (event, settings) => transcoder.setEngineSettings(settings || {}));
+
+function updatePowerBlocker() {
+  const shouldBlock = queueState.keepAwake && queueState.active > 0;
+  if (shouldBlock && powerBlockerId === null) {
+    powerBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+  } else if (!shouldBlock && powerBlockerId !== null) {
+    if (powerSaveBlocker.isStarted(powerBlockerId)) powerSaveBlocker.stop(powerBlockerId);
+    powerBlockerId = null;
+  }
+}
+
+ipcMain.on('queue:state', (event, state = {}) => {
+  queueState.active = Math.max(0, Number(state.active) || 0);
+  queueState.queued = Math.max(0, Number(state.queued) || 0);
+  queueState.keepAwake = state.keepAwake !== false;
+  const progress = Number(state.progress);
+  queueState.progress = Number.isFinite(progress) ? progress : -1;
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (queueState.active + queueState.queued > 0 && queueState.progress >= 0) {
+      mainWindow.setProgressBar(Math.min(1, queueState.progress));
+    } else {
+      mainWindow.setProgressBar(-1);
+    }
+  }
+  updatePowerBlocker();
+});
+
+ipcMain.on('app:notify', (event, { title, body } = {}) => {
+  if (!Notification.isSupported() || typeof title !== 'string') return;
+  const iconPath = path.join(__dirname, 'assets/icon.ico');
+  const notification = new Notification({
+    title: title.slice(0, 120),
+    body: typeof body === 'string' ? body.slice(0, 300) : '',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+  });
+  notification.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  notification.show();
+});
+
+ipcMain.handle('app:isFocused', () => !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()));
+
 // IPC: Jobs
 ipcMain.handle('job:start', async (event, jobConfig) => {
-  const { jobId } = jobConfig;
+  const jobId = jobConfig && jobConfig.jobId;
 
   try {
     const result = await transcoder.runJob(jobConfig, {
-      onProgress: (progressData) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('job:progress', { jobId, ...progressData });
-        }
-      },
-      onComplete: (completeData) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('job:complete', { jobId, ...completeData });
-        }
-      },
+      onProgress: (progressData) => sendToRenderer('job:progress', { jobId, ...progressData }),
+      onComplete: (completeData) => sendToRenderer('job:complete', { jobId, ...completeData }),
       onError: (err) => {
         if (transcoder.canceledJobs.has(jobId)) return;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('job:error', { jobId, error: err.message, log: err.log });
-        }
+        sendToRenderer('job:error', { jobId, error: err.message, log: err.log });
       },
-      onLog: (text) => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('job:log', { jobId, text });
-        }
-      },
+      onLog: (text) => sendToRenderer('job:log', { jobId, text }),
     });
 
-    if (result && result.canceled) {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('job:canceled', { jobId });
-      }
-    }
-
+    if (result && result.canceled) sendToRenderer('job:canceled', { jobId });
     return result;
   } catch (err) {
     if (transcoder.canceledJobs.has(jobId)) {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('job:canceled', { jobId });
-      }
+      sendToRenderer('job:canceled', { jobId });
       return { jobId, canceled: true };
     }
     throw new Error(err.message);
@@ -485,7 +600,7 @@ let isDebugMode = false;
 let desktopLogPath = '';
 try {
   desktopLogPath = path.join(app.getPath('desktop'), 'itzCut-debug.log');
-} catch (e) {
+} catch {
   desktopLogPath = path.join(process.cwd(), 'itzCut-debug.log');
 }
 
@@ -497,8 +612,8 @@ function writeDebugLog(category, message, details = null) {
     if (details !== null && details !== undefined) {
       detailStr = typeof details === 'object' ? ' ' + JSON.stringify(details) : ' ' + details;
     }
-    const line = `[${timestamp}] [${category.toUpperCase()}] ${message}${detailStr}\n`;
-    fs.appendFileSync(desktopLogPath, line, 'utf8');
+    const line = `[${timestamp}] [${String(category).toUpperCase()}] ${message}${detailStr}\n`;
+    fs.appendFile(desktopLogPath, line, 'utf8', () => {});
   } catch (err) {
     console.error('Debug log write error:', err);
   }
@@ -523,7 +638,7 @@ ipcMain.handle('debug:getStatus', () => {
   return { isDebugMode, logPath: desktopLogPath };
 });
 
-ipcMain.handle('debug:log', (event, { category = 'RENDERER', message = '', details = null }) => {
+ipcMain.handle('debug:log', (event, { category = 'RENDERER', message = '', details = null } = {}) => {
   writeDebugLog(category, message, details);
   return true;
 });
@@ -546,6 +661,7 @@ ipcMain.handle('update:check', () => {
 
 ipcMain.handle('update:quitAndInstall', () => {
   if (autoUpdater) {
+    quitConfirmed = true;
     return autoUpdater.quitAndInstall();
   }
   return false;

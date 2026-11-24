@@ -45,7 +45,7 @@ export default class ErrorBoundary extends React.Component {
               boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
             }}
           >
-            <h2 style={{ color: '#e6b422', margin: '0 0 12px 0', fontSize: '20px' }}>
+            <h2 style={{ color: 'var(--gold-primary)', margin: '0 0 12px 0', fontSize: '20px' }}>
               itzCut Desktop — Recovery Mode
             </h2>
             <p style={{ color: '#8b949e', fontSize: '14px', lineHeight: '1.5', margin: '0 0 20px 0' }}>

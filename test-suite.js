@@ -475,6 +475,166 @@ async function testSuite() {
   if (!rejected || fs.existsSync(path.join(__dirname, 'test_blend_30.mp4'))) throw new Error('A 30 fps source must be rejected for frame blending');
   console.log('End-to-end blended trim verified; 30 fps source correctly refused!');
 
+  const ffprobeJson = (file, entries) =>
+    JSON.parse(execSync(`"${status.ffprobePath}" -v error -show_entries ${entries} -of json "${file}"`).toString());
+  const streamsOf = (file) => ffprobeJson(file, 'stream=codec_type,codec_name').streams;
+  const scratch = [];
+  const scratchFile = (name) => {
+    const file = path.join(__dirname, name);
+    scratch.push(file);
+    return file;
+  };
+
+  console.log('\n--- TEST 19: True VFR drops repeated frames and keeps the timeline ---');
+  const staticSample = scratchFile('test_vfr_static_src.mp4');
+  execSync(
+    `"${status.ffmpegPath}" -y -f lavfi -i testsrc2=size=320x180:rate=60:duration=2 -f lavfi -i color=c=blue:size=320x180:rate=60:duration=2 ` +
+      `-f lavfi -i testsrc2=size=320x180:rate=60:duration=2 -f lavfi -i sine=frequency=440:duration=6 ` +
+      `-filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]" -map "[v]" -map 3:a -c:v libx264 -preset ultrafast -c:a aac "${staticSample}"`,
+    { stdio: 'ignore' }
+  );
+  const vfrStaticOut = scratchFile('test_vfr_static_out.mp4');
+  await transcoder.runJob(
+    { jobId: 'test_vfr_static', inputFile: staticSample, outputFile: vfrStaticOut, mode: 'compress', duration: 6, options: { type: 'crf', crf: 28, preset: 'ultrafast', fpsMode: 'vfr' } },
+    { onError: (err) => console.error('VFR static error:', err.message) }
+  );
+  const vfrFrames = Number(execSync(`"${status.ffprobePath}" -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "${vfrStaticOut}"`).toString().trim());
+  const vfrDuration = (await manager.probe(vfrStaticOut)).duration;
+  console.log('VFR output:', { frames: vfrFrames, sourceFrames: 360, duration: vfrDuration });
+  if (!(vfrFrames < 300) || Math.abs(vfrDuration - 6) > 0.1) throw new Error('VFR must drop the static frames and keep the 6 s duration');
+  try {
+    const mode = execSync(`mediainfo --Inform="Video;%FrameRate_Mode%" "${vfrStaticOut}"`).toString().trim();
+    if (mode && mode !== 'VFR') throw new Error(`MediaInfo reported ${mode} instead of VFR`);
+    console.log('MediaInfo frame rate mode:', mode || '(mediainfo not installed)');
+  } catch (e) {
+    if (/instead of VFR/.test(e.message)) throw e;
+  }
+  const cappedArgs = transcoder.buildArgs({ jobId: 'cap', inputFile: staticSample, outputFile: vfrStaticOut, mode: 'compress', options: { type: 'crf', fps: '30', fpsMode: 'vfr' } });
+  if (!cappedArgs.join(' ').includes('prev_selected_t') || !cappedArgs.includes('-video_track_timescale')) throw new Error('VFR frame rate ceiling / timescale missing');
+  console.log('True VFR verified: repeated frames dropped, timeline intact, MediaInfo reports Variable.');
+
+  console.log('\n--- TEST 20: Multiple Audio Tracks (keep, mute one, merge, mute all) ---');
+  const multiTrack = scratchFile('test_multitrack.mkv');
+  execSync(
+    `"${status.ffmpegPath}" -y -f lavfi -i testsrc=duration=3:size=320x180:rate=30 -f lavfi -i sine=frequency=300:duration=3 ` +
+      `-f lavfi -i sine=frequency=600:duration=3 -f lavfi -i sine=frequency=900:duration=3 -map 0 -map 1 -map 2 -map 3 ` +
+      `-c:v libx264 -preset ultrafast -c:a aac "${multiTrack}"`,
+    { stdio: 'ignore' }
+  );
+  const multiMeta = await manager.probe(multiTrack);
+  if ((multiMeta.audioTracks || []).length !== 3) throw new Error(`Expected 3 audio tracks, probe found ${(multiMeta.audioTracks || []).length}`);
+
+  const trackCases = [
+    { name: 'keep 1+3 lossless', options: { losslessCopy: true, audioTracks: { mode: 'keep', include: [0, 2] } }, audio: 2, videoCopy: true },
+    { name: 'merge all lossless video', options: { losslessCopy: true, audioTracks: { mode: 'merge' } }, audio: 1, videoCopy: true },
+    { name: 'merge 2 re-encoded + boost', options: { rotation: '90cw', audioBoostDb: 3, audioTracks: { mode: 'merge', include: [1, 2] } }, audio: 1 },
+    { name: 'every track muted', options: { losslessCopy: true, audioTracks: { mode: 'keep', include: [] } }, audio: 0, videoCopy: true },
+  ];
+  for (const testCase of trackCases) {
+    const out = scratchFile(`test_tracks_${trackCases.indexOf(testCase)}.mkv`);
+    await transcoder.runJob(
+      { jobId: `test_tracks_${trackCases.indexOf(testCase)}`, inputFile: multiTrack, outputFile: out, mode: 'trim', duration: 2, options: { start: 0.5, end: 2.5, ...testCase.options } },
+      { onError: (err) => console.error(`${testCase.name} error:`, err.message) }
+    );
+    const streams = streamsOf(out);
+    const audioCount = streams.filter((s) => s.codec_type === 'audio').length;
+    const args = transcoder.buildArgs(
+      { jobId: 'x', inputFile: multiTrack, outputFile: out, mode: 'trim', options: { start: 0.5, end: 2.5, ...testCase.options } },
+      false,
+      { audioTracks: await transcoder._resolveAudioTracks({ inputFile: multiTrack, outputFile: out, options: testCase.options }) }
+    );
+    const copiesVideo = args.join(' ').includes('-c:v copy');
+    console.log(`  ${testCase.name}: ${audioCount} audio stream(s), video ${copiesVideo ? 'stream-copied' : 're-encoded'}`);
+    if (audioCount !== testCase.audio || !streams.some((s) => s.codec_type === 'video')) throw new Error(`${testCase.name}: expected ${testCase.audio} audio streams`);
+    if (testCase.videoCopy && !copiesVideo) throw new Error(`${testCase.name}: video should be stream-copied`);
+  }
+  const allTracksOut = scratchFile('test_tracks_compress.mp4');
+  await transcoder.runJob(
+    { jobId: 'test_tracks_compress', inputFile: multiTrack, outputFile: allTracksOut, mode: 'compress', duration: 3, options: { type: 'crf', crf: 30, preset: 'ultrafast', audioTracks: { mode: 'keep' } } },
+    { onError: (err) => console.error('Compress keep-all error:', err.message) }
+  );
+  if (streamsOf(allTracksOut).filter((s) => s.codec_type === 'audio').length !== 3) throw new Error('Compression must keep every audio track when asked');
+  console.log('Multi-track keep / merge / mute verified for trims and compression.');
+
+  console.log('\n--- TEST 21: TikTok profile is genuine 2-pass VBR (no CRF) ---');
+  const passLog = [];
+  transcoder.setDebugLogger((category, message, details) => {
+    if (/TikTok Pass/.test(message)) passLog.push(details.args);
+  });
+  const tiktokCheck = scratchFile('test_tiktok_check.mp4');
+  await transcoder.runJob(
+    { jobId: 'test_tiktok_check', inputFile: sampleVideo, outputFile: tiktokCheck, mode: 'compress', duration: 3, options: { type: 'tiktok', preset: 'ultrafast' } },
+    { onError: (err) => console.error('TikTok check error:', err.message) }
+  );
+  transcoder.setDebugLogger(null);
+  if (passLog.length !== 2 || !/-pass 1/.test(passLog[0]) || !/-pass 2/.test(passLog[1])) throw new Error('TikTok must run two FFmpeg passes');
+  if (passLog.some((args) => /-crf|_nvenc|_qsv|_amf/.test(args) || !/-c:v libx264/.test(args) || !/-b:v 20M -maxrate 40M/.test(args))) {
+    throw new Error(`TikTok passes must be x264 VBR at 20M/40M: ${passLog.join(' | ')}`);
+  }
+  console.log('Two x264 passes at 20 Mbps VBR (40 Mbps peak), no CRF, no GPU encoder.');
+
+  console.log('\n--- TEST 22: Job validation & filter-injection safety ---');
+  const rejects = async (config, pattern) => {
+    try {
+      await transcoder.runJob(config, {});
+    } catch (err) {
+      if (pattern.test(err.message)) return;
+      throw new Error(`Unexpected error: ${err.message}`);
+    }
+    throw new Error(`Job should have been rejected: ${JSON.stringify(config)}`);
+  };
+  await rejects({ jobId: 'same_file', inputFile: sampleVideo, outputFile: sampleVideo, mode: 'compress', options: {} }, /overwrite the source/);
+  await rejects({ jobId: 'bad_ext', inputFile: sampleVideo, outputFile: path.join(__dirname, 'evil.bat'), mode: 'compress', options: {} }, /Unsupported output/);
+  await rejects({ jobId: '../bad id', inputFile: sampleVideo, outputFile: path.join(__dirname, 'x.mp4'), mode: 'compress', options: {} }, /Invalid job id/);
+  const injected = transcoder.buildArgs({ jobId: 'inj', inputFile: sampleVideo, outputFile: path.join(__dirname, 'x.mp4'), mode: 'compress', options: { type: 'crf', fps: '30,drawtext=text=x', crf: '23;rm', preset: 'evil' } });
+  const injectedLine = injected.join(' ');
+  if (injectedLine.includes('drawtext') || injectedLine.includes(';rm') || !injectedLine.includes('fps=30') || !/-preset (medium|p5)/.test(injectedLine)) {
+    throw new Error(`Renderer values must be sanitised: ${injectedLine}`);
+  }
+  console.log('Same-file overwrite, unknown extensions, bad ids and filter injection are all refused.');
+
+  console.log('\n--- TEST 23: GPU encoders follow the speed preset ---');
+  const fakeGpu = new Transcoder({ status: { hardwareAccels: { nvenc: true } } });
+  const gpuArgs = fakeGpu.buildArgs({ jobId: 'gpu', inputFile: sampleVideo, outputFile: path.join(__dirname, 'x.mp4'), mode: 'compress', options: { type: 'crf', crf: 28, preset: 'slow' } }).join(' ');
+  if (!gpuArgs.includes('h264_nvenc -preset p6')) throw new Error(`NVENC should use preset p6 for "slow": ${gpuArgs}`);
+  fakeGpu.setEngineSettings({ forceSoftware: true });
+  const cpuArgs = fakeGpu.buildArgs({ jobId: 'cpu', inputFile: sampleVideo, outputFile: path.join(__dirname, 'x.mp4'), mode: 'compress', options: { type: 'crf', crf: 28, preset: 'slower' } }).join(' ');
+  if (!cpuArgs.includes('-c:v libx264') || !cpuArgs.includes('-preset slower')) throw new Error(`"CPU only" must force libx264: ${cpuArgs}`);
+  console.log('NVENC maps x264 presets to p1-p7; CPU-only setting forces libx264.');
+
+  console.log('\n--- TEST 24: Quitting cancels running encodes and removes partial files ---');
+  const longSource = scratchFile('test_long_src.mp4');
+  execSync(`"${status.ffmpegPath}" -y -f lavfi -i testsrc2=duration=40:size=1280x720:rate=30 -c:v libx264 -preset ultrafast "${longSource}"`, { stdio: 'ignore' });
+  const longOut = scratchFile('test_long_out.mp4');
+  const cpuTranscoder = new Transcoder(manager);
+  cpuTranscoder.setEngineSettings({ forceSoftware: true, priority: 'below' });
+  const longJob = cpuTranscoder.runJob(
+    { jobId: 'test_long', inputFile: longSource, outputFile: longOut, mode: 'compress', duration: 40, options: { type: 'crf', crf: 18, preset: 'veryslow' } },
+    {}
+  );
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await cpuTranscoder.cancelAll();
+  const longResult = await longJob;
+  if (!longResult.canceled || fs.existsSync(longOut) || cpuTranscoder.activeJobs.size !== 0) throw new Error('cancelAll() must stop FFmpeg and delete the partial output');
+  console.log('Running encode stopped and its partial output removed.');
+
+  console.log('\n--- TEST 25: Preview proxy encodes can be canceled ---');
+  const proxySource = scratchFile('test_proxy_cancel.avi');
+  execSync(`"${status.ffmpegPath}" -y -f lavfi -i testsrc2=duration=60:size=1280x720:rate=30 -c:v mpeg4 -q:v 2 "${proxySource}"`, { stdio: 'ignore' });
+  const proxyPromise = manager.ensurePreviewProxy(proxySource);
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  if (!manager.cancelPreviewProxy(proxySource)) throw new Error('Proxy encode should be running');
+  let proxyCanceled = false;
+  try {
+    await proxyPromise;
+  } catch (err) {
+    proxyCanceled = /canceled/.test(err.message);
+  }
+  if (!proxyCanceled || manager._proxyProcesses.size !== 0) throw new Error('Canceling the proxy must stop its FFmpeg process');
+  console.log('Proxy encode stopped on request (no FFmpeg left behind).');
+
+  for (const file of scratch) if (fs.existsSync(file)) fs.unlinkSync(file);
+
   // Clean up
   try {
     if (fs.existsSync(sampleVideo)) fs.unlinkSync(sampleVideo);

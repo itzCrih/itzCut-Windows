@@ -1,501 +1,402 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Settings,
   Cpu,
   Download,
   Folder,
   CheckCircle,
   AlertTriangle,
   RefreshCw,
-  HardDrive,
   Info,
-  Sparkles,
   Bug,
   FileText,
   Zap,
   Check,
   X,
+  SlidersHorizontal,
+  Palette,
+  Bell,
+  HardDrive,
+  FolderOpen,
+  ChevronDown,
 } from 'lucide-react';
+import { Segmented, Collapse } from '../components/ui';
+import { ACCENTS, cleanSuffix } from '../utils/settings';
+
+function Switch({ checked, onChange, label }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} className={`toggle-switch ${checked ? 'on' : ''}`} onClick={() => onChange(!checked)}>
+      <span className="toggle-knob" />
+    </button>
+  );
+}
+
+function SettingRow({ label, description, children }) {
+  return (
+    <div className="setting-row">
+      <div className="setting-text">
+        <span className="setting-label">{label}</span>
+        {description && <span className="setting-desc">{description}</span>}
+      </div>
+      <div className="setting-control">{children}</div>
+    </div>
+  );
+}
+
+function SettingGroup({ icon: Icon, title, children }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="setting-group">
+      <div className="setting-group-title">
+        <Icon size={13} />
+        <span>{title}</span>
+        <button
+          type="button"
+          className={`group-toggle ${open ? 'open' : ''}`}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${title}`}
+          title={open ? 'Collapse' : 'Expand'}
+        >
+          <ChevronDown size={14} />
+        </button>
+      </div>
+      <Collapse open={open}>
+        <div className="setting-group-body">{children}</div>
+      </Collapse>
+    </div>
+  );
+}
+
+function AccelPill({ label, available, title }) {
+  return (
+    <span className={`accel-pill ${available ? 'on' : ''}`} title={title}>
+      <span>{label}</span>
+      {available ? <Check size={12} /> : <X size={12} />}
+    </span>
+  );
+}
 
 export default function SettingsTab({
   ffmpegStatus,
-  defaultOutputDir,
+  settings,
+  onUpdateSettings,
+  appOutputDir,
   onRefreshFfmpeg,
   onDownloadFfmpeg,
   downloadProgress,
   isDownloading,
-  animationsEnabled = true,
-  onToggleAnimations,
   updateState,
   onCheckForUpdates,
   onInstallUpdate,
   onShowToast,
 }) {
-  const [outputDir, setOutputDir] = useState(defaultOutputDir);
   const [debugMode, setDebugMode] = useState(false);
   const [debugLogPath, setDebugLogPath] = useState('');
+  const [suffixDraft, setSuffixDraft] = useState(settings.fileSuffix);
+  const accels = ffmpegStatus?.hardwareAccels || {};
+  const hasGpuEncoder = !!(accels.nvenc || accels.qsv || accels.amf);
+  const outputDir = settings.outputDir || appOutputDir;
 
-  React.useEffect(() => {
-    if (window.itzCutAPI?.getDebugMode) {
-      window.itzCutAPI.getDebugMode().then((res) => {
-        if (res) {
-          setDebugMode(!!res.isDebugMode);
-          setDebugLogPath(res.logPath || '');
-        }
-      });
-    }
+  useEffect(() => {
+    window.itzCutAPI?.getDebugMode?.().then((res) => {
+      if (res) {
+        setDebugMode(!!res.isDebugMode);
+        setDebugLogPath(res.logPath || '');
+      }
+    });
   }, []);
 
   const handleToggleDebug = async () => {
     if (!window.itzCutAPI?.setDebugMode) return;
-    const nextVal = !debugMode;
-    const res = await window.itzCutAPI.setDebugMode(nextVal);
-    setDebugMode(res?.isDebugMode ?? nextVal);
+    const next = !debugMode;
+    const res = await window.itzCutAPI.setDebugMode(next);
+    setDebugMode(res?.isDebugMode ?? next);
     if (res?.logPath) setDebugLogPath(res.logPath);
-    onShowToast(
-      nextVal
-        ? 'Debug Mode enabled! Diagnostic logs are writing to itzCut-debug.log on your Desktop.'
-        : 'Debug Mode disabled.',
-      'info'
-    );
+    onShowToast(next ? 'Debug mode enabled: logs are written to itzCut-debug.log on your Desktop.' : 'Debug mode disabled.', 'info');
   };
 
   const handleOpenDebugLog = async () => {
     if (!window.itzCutAPI?.openDebugLogFile) return;
     const opened = await window.itzCutAPI.openDebugLogFile();
-    if (!opened) {
-      onShowToast('No itzCut-debug.log exists on your Desktop yet. Enable debug mode first!', 'info');
-    }
+    if (!opened) onShowToast('No itzCut-debug.log exists on your Desktop yet. Enable debug mode first!', 'info');
   };
 
   const handlePickOutputDir = async () => {
     if (!window.itzCutAPI) return;
     const folder = await window.itzCutAPI.selectFolderDialog();
     if (folder) {
-      setOutputDir(folder);
-      onShowToast(`Default destination updated: ${folder}`, 'success');
+      onUpdateSettings({ outputDir: folder });
+      onShowToast(`Default destination: ${folder}`, 'success');
     }
   };
 
-  const handleOpenFolder = async () => {
-    if (!window.itzCutAPI) return;
-    await window.itzCutAPI.showInFolder(outputDir || defaultOutputDir);
+  const commitSuffix = () => {
+    const clean = cleanSuffix(suffixDraft);
+    setSuffixDraft(clean);
+    if (clean !== settings.fileSuffix) onUpdateSettings({ fileSuffix: clean });
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div className="grid-2">
-        {/* FFmpeg Engine Status Card */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <Cpu size={18} />
-              <span>FFmpeg Engine & GPU Acceleration</span>
+    <div className="settings-layout">
+      {/* Engine */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">
+            <Cpu size={18} />
+            <span>FFmpeg Engine</span>
+          </div>
+          <button className="btn-secondary btn-compact" onClick={onRefreshFfmpeg} title="Re-check FFmpeg and the GPU encoders">
+            <RefreshCw size={13} />
+            <span>Re-check</span>
+          </button>
+        </div>
+
+        <div className="options-stack">
+          <div className="engine-status">
+            <div>
+              <div className="setting-label">FFmpeg</div>
+              <div className="setting-desc">
+                {ffmpegStatus?.available
+                  ? `Version ${ffmpegStatus.version || 'unknown'} · ${ffmpegStatus.source === 'system' ? 'System PATH' : 'Local binary'}`
+                  : 'FFmpeg binaries not found'}
+              </div>
             </div>
-            <button className="btn-secondary" onClick={onRefreshFfmpeg} title="Re-check environment">
-              <RefreshCw size={13} />
-              <span>Re-check</span>
-            </button>
+            {ffmpegStatus?.available ? (
+              <span className="status-pill completed">
+                <CheckCircle size={12} /> Active
+              </span>
+            ) : (
+              <span className="status-pill error">
+                <AlertTriangle size={12} /> Missing
+              </span>
+            )}
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 14px',
-                background: 'rgba(255, 255, 255, 0.04)',
-                borderRadius: 'var(--radius-md)',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 600 }}>FFmpeg Status</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  {ffmpegStatus?.available
-                    ? `Version ${ffmpegStatus.version || '7.1'} (${ffmpegStatus.source === 'system' ? 'System PATH' : 'Local Binary'})`
-                    : 'FFmpeg binaries not found'}
-                </div>
-              </div>
-
-              <div>
-                {ffmpegStatus?.available ? (
-                  <span className="pill-tag" style={{ color: '#7ee787', borderColor: '#2ea043' }}>
-                    <CheckCircle size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                    Active
-                  </span>
-                ) : (
-                  <span className="pill-tag" style={{ color: '#f85149', borderColor: '#f85149' }}>
-                    <AlertTriangle size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                    Missing
-                  </span>
-                )}
-              </div>
+          <div>
+            <div className="setting-group-title">
+              <Zap size={13} />
+              <span>Hardware Encoders</span>
             </div>
-
-            {/* Hardware Encoders */}
-            <div>
-              <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
-                Active Hardware Encoders (GPU Forced by Default)
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <span
-                  className="pill-tag"
-                  style={{
-                    color: ffmpegStatus?.hardwareAccels?.nvenc ? '#7ee787' : 'var(--text-dim)',
-                    borderColor: ffmpegStatus?.hardwareAccels?.nvenc ? '#2ea043' : 'var(--border-subtle)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                  }}
-                  title={ffmpegStatus?.hardwareAccels?.nvenc ? 'NVIDIA NVENC hardware encoding is available and will be forced' : 'NVIDIA hardware encoder not detected'}
-                >
-                  <span>NVIDIA NVENC</span>
-                  {ffmpegStatus?.hardwareAccels?.nvenc ? <Check size={12} color="#7ee787" /> : <X size={12} color="var(--text-dim)" />}
-                </span>
-                <span
-                  className="pill-tag"
-                  style={{
-                    color: ffmpegStatus?.hardwareAccels?.qsv ? '#7ee787' : 'var(--text-dim)',
-                    borderColor: ffmpegStatus?.hardwareAccels?.qsv ? '#2ea043' : 'var(--border-subtle)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                  }}
-                  title={ffmpegStatus?.hardwareAccels?.qsv ? 'Intel QuickSync hardware encoding is available' : 'Intel QuickSync not detected'}
-                >
-                  <span>Intel QuickSync</span>
-                  {ffmpegStatus?.hardwareAccels?.qsv ? <Check size={12} color="#7ee787" /> : <X size={12} color="var(--text-dim)" />}
-                </span>
-                <span
-                  className="pill-tag"
-                  style={{
-                    color: ffmpegStatus?.hardwareAccels?.amf ? '#7ee787' : 'var(--text-dim)',
-                    borderColor: ffmpegStatus?.hardwareAccels?.amf ? '#2ea043' : 'var(--border-subtle)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                  }}
-                  title={ffmpegStatus?.hardwareAccels?.amf ? 'AMD AMF hardware encoding is available' : 'AMD AMF not detected on this system'}
-                >
-                  <span>AMD AMF</span>
-                  {ffmpegStatus?.hardwareAccels?.amf ? <Check size={12} color="#7ee787" /> : <X size={12} color="var(--text-dim)" />}
-                </span>
-                <span
-                  className="pill-tag"
-                  style={{
-                    color: '#7ee787',
-                    borderColor: '#2ea043',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                  }}
-                  title="Universal CPU software fallback: Always ready if GPU is busy or unsupported"
-                >
-                  <span>CPU Fallback (libx264)</span>
-                  <Check size={12} color="#7ee787" />
-                </span>
-              </div>
+            <div className="accel-pills">
+              <AccelPill label="NVIDIA NVENC" available={accels.nvenc} title="NVIDIA hardware encoder" />
+              <AccelPill label="Intel QuickSync" available={accels.qsv} title="Intel hardware encoder" />
+              <AccelPill label="AMD AMF" available={accels.amf} title="AMD hardware encoder" />
+              <AccelPill label="CPU x264 / x265" available title="Software encoders, always available" />
             </div>
+          </div>
 
-            {/* System Hardware Specifications */}
-            {ffmpegStatus?.systemInfo && (
-              <div
-                style={{
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px 14px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                }}
-              >
-                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Cpu size={14} color="#e6b422" />
-                  <span>Hardware & System Capabilities</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', fontSize: '11.5px', fontFamily: 'var(--font-mono)' }}>
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    <span style={{ color: 'var(--text-dim)' }}>CPU: </span>
-                    <span>{ffmpegStatus.systemInfo.cpuModel || 'Detected CPU'} ({ffmpegStatus.systemInfo.cpuCores || 4} threads)</span>
-                  </div>
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    <span style={{ color: 'var(--text-dim)' }}>RAM: </span>
-                    <span>{ffmpegStatus.systemInfo.ramGb || 8} GB Total</span>
-                  </div>
-                </div>
-                {ffmpegStatus.systemInfo.gpuDevices && ffmpegStatus.systemInfo.gpuDevices.length > 0 && (
-                  <div style={{ fontSize: '11.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                    <span style={{ color: 'var(--text-dim)' }}>Detected GPUs: </span>
-                    <span>{ffmpegStatus.systemInfo.gpuDevices.join(' • ')}</span>
-                  </div>
-                )}
+          {ffmpegStatus?.systemInfo && (
+            <div className="system-info">
+              <div>
+                <span className="dim">CPU</span> {ffmpegStatus.systemInfo.cpuModel || 'Detected CPU'} · {ffmpegStatus.systemInfo.cpuCores || 4} threads
               </div>
-            )}
-
-            {/* Path info */}
-            {ffmpegStatus?.ffmpegPath && (
-              <div style={{ fontSize: '11px', color: 'var(--text-dim)', wordBreak: 'break-all', fontFamily: 'var(--font-mono)' }}>
-                Binary: {ffmpegStatus.ffmpegPath}
+              <div>
+                <span className="dim">RAM</span> {ffmpegStatus.systemInfo.ramGb || 8} GB
               </div>
-            )}
-
-            {/* Auto-Downloader Section */}
-            <div style={{ marginTop: '10px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                Automated Static FFmpeg Setup
-              </div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-                Automatically downloads and extracts the official 64-bit static build of FFmpeg and FFprobe directly into the application's local sandbox folder.
-              </p>
-
-              {isDownloading ? (
+              {ffmpegStatus.systemInfo.gpuDevices?.length > 0 && (
                 <div>
-                  <div className="progress-track">
-                    <div
-                      className="progress-fill animated"
-                      style={{ width: `${downloadProgress?.percent || 0}%` }}
-                    />
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--gold-primary)', marginTop: '4px' }}>
-                    {downloadProgress?.message || 'Downloading static build...'}
-                  </div>
+                  <span className="dim">GPU</span> {ffmpegStatus.systemInfo.gpuDevices.join(' · ')}
                 </div>
-              ) : (
-                <button
-                  className="btn-gold"
-                  onClick={onDownloadFfmpeg}
-                  disabled={isDownloading}
-                  style={{ width: '100%' }}
-                >
-                  <Download size={15} />
-                  <span>{ffmpegStatus?.available ? 'Reinstall Official Static FFmpeg' : 'Download FFmpeg Now'}</span>
-                </button>
+              )}
+              {ffmpegStatus.ffmpegPath && (
+                <div className="path-line" title={ffmpegStatus.ffmpegPath}>
+                  <span className="dim">Binary</span> {ffmpegStatus.ffmpegPath}
+                </div>
               )}
             </div>
+          )}
+
+          <div className="engine-download">
+            {isDownloading ? (
+              <>
+                <div className="progress-track">
+                  <div className="progress-fill animated" style={{ width: `${downloadProgress?.percent || 0}%` }} />
+                </div>
+                <div className="setting-desc accent">{downloadProgress?.message || 'Downloading FFmpeg…'}</div>
+              </>
+            ) : (
+              <button className={ffmpegStatus?.available ? 'btn-secondary btn-block' : 'btn-gold btn-block'} onClick={onDownloadFfmpeg} disabled={isDownloading}>
+                <Download size={15} />
+                <span>{ffmpegStatus?.available ? 'Reinstall FFmpeg' : 'Download FFmpeg Now'}</span>
+              </button>
+            )}
+            <div className="setting-desc">Downloads the official 64-bit FFmpeg build into the app's own folder.</div>
+          </div>
+
+          <div className="divider" />
+
+          <SettingRow label="Diagnostic Debug Mode" description="Logs player and FFmpeg events to itzCut-debug.log on the Desktop.">
+            <button type="button" className="btn-secondary btn-xs" onClick={handleOpenDebugLog} title={debugLogPath || 'itzCut-debug.log'}>
+              <FileText size={12} />
+              <span>Open Log</span>
+            </button>
+            <Switch checked={debugMode} onChange={handleToggleDebug} label="Debug mode" />
+          </SettingRow>
+
+          <SettingRow
+            label="Software Updates"
+            description={
+              updateState?.status === 'downloading'
+                ? `Downloading v${updateState.latestVersion}: ${updateState.downloadPercent || 0}%`
+                : `Installed: v${updateState?.currentVersion || __APP_VERSION__}`
+            }
+          >
+            {updateState?.status === 'ready' ? (
+              <button type="button" className="btn-gold btn-xs" onClick={onInstallUpdate}>
+                <Zap size={12} />
+                <span>Restart & Install v{updateState.latestVersion}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-secondary btn-xs"
+                onClick={onCheckForUpdates}
+                disabled={updateState?.status === 'checking' || updateState?.status === 'downloading'}
+              >
+                <RefreshCw size={12} className={updateState?.status === 'checking' ? 'spin' : ''} />
+                <span>{updateState?.status === 'checking' ? 'Checking…' : 'Check Now'}</span>
+              </button>
+            )}
+          </SettingRow>
+
+          <div className="about-line">
+            <Info size={13} className="icon-accent" />
+            <span>
+              itzCut Desktop is the Windows companion to <strong>cut.itzcrih.it</strong>. Everything is processed locally on this PC.
+            </span>
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => window.itzCutAPI?.openExternal('https://github.com/itzCrih/itzCut-Windows/releases')}
+            >
+              Releases
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Preferences */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">
+            <SlidersHorizontal size={18} />
+            <span>Preferences</span>
           </div>
         </div>
 
-        {/* Output Directory & General Settings */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <HardDrive size={18} />
-              <span>Export Destination & Storage</span>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div className="form-group">
-              <label className="form-label">Default export folder for converted clips and audio</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={outputDir || defaultOutputDir || ''}
-                  readOnly
-                  style={{ flex: 1 }}
-                />
-                <button className="btn-secondary" onClick={handlePickOutputDir}>
-                  <Folder size={15} />
-                  <span>Browse</span>
+        <div className="settings-groups">
+          <SettingGroup icon={HardDrive} title="Output">
+            <div className="setting-row column">
+              <div className="setting-text">
+                <span className="setting-label">Default Folder</span>
+              </div>
+              <div className="path-field">
+                <span className="path-value" title={outputDir}>
+                  {outputDir || '…'}
+                </span>
+                <button type="button" className="btn-secondary btn-compact btn-icon-only" onClick={() => window.itzCutAPI?.showInFolder(outputDir)} title="Open in Explorer">
+                  <FolderOpen size={14} />
+                </button>
+                <button type="button" className="btn-secondary btn-compact" onClick={handlePickOutputDir}>
+                  <Folder size={14} />
+                  <span>Change</span>
                 </button>
               </div>
-            </div>
-
-            <button className="btn-secondary" onClick={handleOpenFolder} style={{ alignSelf: 'flex-start' }}>
-              <Folder size={15} />
-              <span>Open Export Folder in Windows Explorer</span>
-            </button>
-
-            {/* UI Effects & Performance Settings */}
-            <div
-              style={{
-                padding: '14px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Sparkles size={16} color="var(--gold-primary)" />
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600 }}>Page Transition Animations</div>
-                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      Subtle fade & slide transitions when switching tabs
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className={animationsEnabled ? 'btn-gold' : 'btn-secondary'}
-                  style={{ padding: '6px 14px', fontSize: '12px', minWidth: '85px' }}
-                  onClick={() => {
-                    const nextVal = !animationsEnabled;
-                    if (onToggleAnimations) onToggleAnimations(nextVal);
-                    if (onShowToast) onShowToast(nextVal ? 'Animations enabled' : 'Animations disabled', 'info');
-                  }}
-                >
-                  {animationsEnabled ? 'Enabled' : 'Disabled'}
-                </button>
-              </div>
-
-              <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Zap size={13} color="#e6b422" style={{ flexShrink: 0 }} />
-                <span><strong>RAM Optimization:</strong> Heap memory is capped at 512MB and preview playback pauses automatically in background.</span>
-              </div>
-            </div>
-
-            {/* Diagnostics & Desktop Debug Logging */}
-            <div
-              style={{
-                padding: '14px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bug size={16} color={debugMode ? '#e6b422' : 'var(--text-muted)'} />
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600 }}>Diagnostic Debug Mode</div>
-                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      Logs player scrubbing, decoding & FFmpeg events to Desktop
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className={debugMode ? 'btn-gold' : 'btn-secondary'}
-                  style={{ padding: '6px 14px', fontSize: '12px', minWidth: '85px' }}
-                  onClick={handleToggleDebug}
-                >
-                  {debugMode ? 'Enabled' : 'Disabled'}
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '280px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Folder size={12} style={{ flexShrink: 0 }} />
-                  <span>{debugLogPath || 'itzCut-debug.log on Desktop'}</span>
-                </div>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ padding: '4px 10px', fontSize: '11px' }}
-                  onClick={handleOpenDebugLog}
-                  title="Open log file"
-                >
-                  <FileText size={12} style={{ display: 'inline', marginRight: '4px' }} />
-                  Open Log
-                </button>
-              </div>
-            </div>
-
-            {/* Software Updates & Auto-Updater Card */}
-            <div
-              style={{
-                padding: '14px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <RefreshCw size={16} color="var(--gold-primary)" className={updateState?.status === 'checking' ? 'spin' : ''} />
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600 }}>Software Updates</div>
-                    <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      Current: <strong>v{updateState?.currentVersion || __APP_VERSION__}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ padding: '6px 14px', fontSize: '12px' }}
-                  onClick={onCheckForUpdates}
-                  disabled={updateState?.status === 'checking' || updateState?.status === 'downloading'}
-                >
-                  <RefreshCw size={12} className={updateState?.status === 'checking' ? 'spin' : ''} style={{ display: 'inline', marginRight: '4px' }} />
-                  {updateState?.status === 'checking' ? 'Checking...' : 'Check for Updates'}
-                </button>
-              </div>
-
-              {updateState?.status === 'downloading' && (
-                <div>
-                  <div className="progress-track">
-                    <div
-                      className="progress-fill animated"
-                      style={{ width: `${updateState.downloadPercent || 0}%` }}
-                    />
-                  </div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--gold-primary)', marginTop: '4px' }}>
-                    Downloading latest update package: {updateState.downloadPercent || 0}%...
-                  </div>
-                </div>
-              )}
-
-              {updateState?.status === 'ready' && (
-                <button
-                  type="button"
-                  className="btn-gold"
-                  onClick={onInstallUpdate}
-                  style={{ width: '100%', padding: '9px 16px' }}
-                >
-                  <Zap size={14} />
-                  <span>Restart & Install Update (v{updateState.latestVersion})</span>
+              {settings.outputDir && (
+                <button type="button" className="link-btn self-start" onClick={() => onUpdateSettings({ outputDir: '' })}>
+                  Reset to Videos\itzCut
                 </button>
               )}
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11.5px', color: 'var(--text-dim)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
-                <span>Repository: itzCrih/itzCut-Windows</span>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ padding: '3px 8px', fontSize: '11px' }}
-                  onClick={() => window.itzCutAPI && window.itzCutAPI.openExternal('https://github.com/itzCrih/itzCut-Windows/releases')}
-                >
-                  GitHub Releases
-                </button>
-              </div>
             </div>
+            <SettingRow label="File Name Suffix" description={`clip${settings.fileSuffix}_20261124.mp4`}>
+              <input
+                type="text"
+                className="form-input small-input"
+                value={suffixDraft}
+                maxLength={40}
+                onChange={(e) => setSuffixDraft(e.target.value)}
+                onBlur={commitSuffix}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                aria-label="File name suffix"
+              />
+            </SettingRow>
+          </SettingGroup>
 
-            {/* Application Branding Info */}
-            <div
-              style={{
-                marginTop: 'auto',
-                paddingTop: '20px',
-                borderTop: '1px solid var(--border-subtle)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Info size={16} color="#e6b422" />
-                <span style={{ fontSize: '13.5px', fontWeight: 700 }}>itzCut Windows Desktop Edition</span>
+          <SettingGroup icon={Cpu} title="Performance">
+            <SettingRow label="Simultaneous Jobs" description="Long encodes finish fastest one at a time.">
+              <Segmented size="sm" stretch={false} options={[1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }))} value={settings.maxConcurrentJobs} onChange={(v) => onUpdateSettings({ maxConcurrentJobs: v })} ariaLabel="Simultaneous jobs" />
+            </SettingRow>
+            <SettingRow label="Video Encoder" description={hasGpuEncoder ? 'GPU is much faster; CPU gives the smallest files.' : 'No GPU encoder detected on this PC.'}>
+              <Segmented
+                size="sm"
+                stretch={false}
+                options={[
+                  { value: 'auto', label: 'GPU', title: 'Use the GPU encoder when available', disabled: !hasGpuEncoder },
+                  { value: 'cpu', label: 'CPU', title: 'Always use x264 / x265' },
+                ]}
+                value={hasGpuEncoder ? settings.encoder : 'cpu'}
+                onChange={(v) => onUpdateSettings({ encoder: v })}
+                ariaLabel="Video encoder"
+              />
+            </SettingRow>
+            <SettingRow label="CPU Priority" description="Lower keeps the PC responsive during encodes.">
+              <Segmented
+                size="sm"
+                stretch={false}
+                options={[
+                  { value: 'normal', label: 'Normal' },
+                  { value: 'below', label: 'Lower' },
+                  { value: 'low', label: 'Idle' },
+                ]}
+                value={settings.priority}
+                onChange={(v) => onUpdateSettings({ priority: v })}
+                ariaLabel="CPU priority"
+              />
+            </SettingRow>
+            <SettingRow label="GPU Decoding" description="Decodes sources on the GPU; falls back to CPU automatically.">
+              <Switch checked={settings.hwDecode} onChange={(v) => onUpdateSettings({ hwDecode: v })} label="GPU decoding" />
+            </SettingRow>
+            <SettingRow label="Keep PC Awake" description="Prevents sleep while the queue is running.">
+              <Switch checked={settings.keepAwake} onChange={(v) => onUpdateSettings({ keepAwake: v })} label="Keep PC awake" />
+            </SettingRow>
+          </SettingGroup>
+
+          <SettingGroup icon={Bell} title="When Jobs Finish">
+            <SettingRow label="Desktop Notification" description="When the queue finishes and itzCut is in the background.">
+              <Switch checked={settings.notifyOnFinish} onChange={(v) => onUpdateSettings({ notifyOnFinish: v })} label="Desktop notification" />
+            </SettingRow>
+            <SettingRow label="Completion Sound">
+              <Switch checked={settings.completionSound} onChange={(v) => onUpdateSettings({ completionSound: v })} label="Completion sound" />
+            </SettingRow>
+            <SettingRow label="Open Output Folder">
+              <Switch checked={settings.openFolderWhenDone} onChange={(v) => onUpdateSettings({ openFolderWhenDone: v })} label="Open output folder" />
+            </SettingRow>
+            <SettingRow label="Show Queue on Start" description="Switch to the Queue tab when a job is added.">
+              <Switch checked={settings.autoSwitchToQueue} onChange={(v) => onUpdateSettings({ autoSwitchToQueue: v })} label="Show queue on start" />
+            </SettingRow>
+          </SettingGroup>
+
+          <SettingGroup icon={Palette} title="Appearance">
+            <SettingRow label="Accent Color">
+              <div className="accent-swatches" role="radiogroup" aria-label="Accent color">
+                {ACCENTS.map((accent) => (
+                  <button
+                    key={accent.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={settings.accent === accent.id}
+                    className={`accent-swatch ${settings.accent === accent.id ? 'active' : ''}`}
+                    style={{ '--swatch': accent.color }}
+                    onClick={() => onUpdateSettings({ accent: accent.id })}
+                    title={accent.label}
+                  />
+                ))}
               </div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                Built as the native Windows companion to the web application <strong>cut.itzcrih.it</strong>.
-                100% of rendering, trimming, compression, and audio filters are processed locally on your machine with complete privacy and zero upload bottlenecks.
-              </p>
-            </div>
-          </div>
+            </SettingRow>
+            <SettingRow label="Page Animations">
+              <Switch checked={settings.animations} onChange={(v) => onUpdateSettings({ animations: v })} label="Page animations" />
+            </SettingRow>
+          </SettingGroup>
         </div>
       </div>
     </div>

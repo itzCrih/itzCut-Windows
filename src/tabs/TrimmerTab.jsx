@@ -1,30 +1,104 @@
 import React, { useState, useEffect } from 'react';
 import {
   Scissors,
-  VolumeX,
   Zap,
   Clock,
   Folder,
   Sliders,
   RotateCw,
-  Crop,
-  Volume2,
+  RotateCcw,
   Music,
   Layers,
+  FlipHorizontal2,
+  FlipVertical2,
+  RectangleHorizontal,
+  Film,
+  Volume2,
+  Image as ImageIcon,
 } from 'lucide-react';
-import DropZone from '../components/DropZone';
+import MediaTray from '../components/MediaTray';
 import MediaPreview from '../components/MediaPreview';
 import AudioPreview from '../components/AudioPreview';
+import AudioTracksPanel from '../components/AudioTracksPanel';
+import AudioGainControl from '../components/AudioGainControl';
+import Select from '../components/Select';
+import { Segmented, Collapse, Toggle, SectionLabel } from '../components/ui';
 import { formatTimecode, parseTimecode } from '../utils/formatters';
 import { isAudioMedia } from '../utils/fileTypes';
+import { buildOutputPath } from '../utils/settings';
+
+const ROTATIONS = [
+  { value: 'none', icon: RectangleHorizontal, title: 'Original orientation' },
+  { value: '90cw', icon: RotateCw, title: 'Rotate 90° clockwise' },
+  { value: '90ccw', icon: RotateCcw, title: 'Rotate 90° counter-clockwise' },
+  { value: '180', label: '180°', title: 'Rotate 180° (upside down)' },
+  { value: 'hflip', icon: FlipHorizontal2, title: 'Mirror horizontally' },
+  { value: 'vflip', icon: FlipVertical2, title: 'Flip vertically' },
+];
+
+const ASPECTS = [
+  { value: 'original', label: 'Original', w: 16, h: 10, title: 'Keep the source aspect ratio' },
+  { value: '16:9', label: '16:9', w: 16, h: 9, title: 'Landscape (YouTube)' },
+  { value: '9:16', label: '9:16', w: 9, h: 16, title: 'Vertical (TikTok, Reels, Shorts)' },
+  { value: '1:1', label: '1:1', w: 12, h: 12, title: 'Square (Instagram)' },
+  { value: '4:3', label: '4:3', w: 14, h: 10.5, title: 'Classic 4:3' },
+];
+
+const FIT_MODES = [
+  { value: 'pad', label: 'Fit', title: 'Black bars, nothing cropped' },
+  { value: 'crop', label: 'Fill', title: 'Center crop, no bars' },
+  { value: 'stretch', label: 'Stretch', title: 'Distort to fill the frame' },
+];
+
+const SPEEDS = [
+  { value: 0.5, label: '0.5×', title: 'Slow motion' },
+  { value: 1, label: '1×', title: 'Normal speed' },
+  { value: 1.5, label: '1.5×', title: 'Fast' },
+  { value: 2, label: '2×', title: 'Double speed' },
+];
+
+const GIF_RATES = [10, 15, 24, 30].map((v) => ({ value: v, label: `${v} fps` }));
+
+const AUDIO_EXPORT_FORMATS = [
+  { value: 'mp3', label: 'MP3', hint: '320 kbps' },
+  { value: 'wav', label: 'WAV', hint: 'Uncompressed' },
+  { value: 'aac', label: 'AAC', hint: 'M4A' },
+  { value: 'flac', label: 'FLAC', hint: 'Lossless' },
+  { value: 'opus', label: 'Opus', hint: 'OGG' },
+];
+
+function AspectPicker({ value, onChange }) {
+  return (
+    <div className="aspect-picker" role="radiogroup" aria-label="Aspect ratio">
+      {ASPECTS.map((aspect) => (
+        <button
+          key={aspect.value}
+          type="button"
+          role="radio"
+          aria-checked={value === aspect.value}
+          className={`aspect-chip ${value === aspect.value ? 'active' : ''}`}
+          onClick={() => onChange(aspect.value)}
+          title={aspect.title}
+        >
+          <span className={`aspect-shape ${aspect.value === 'original' ? 'dashed' : ''}`} style={{ width: aspect.w, height: aspect.h }} />
+          <span>{aspect.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function TrimmerTab({
-  currentFile,
+  files,
+  activeFile,
   mediaInfo,
-  onFileSelected,
-  onFileCleared,
-  defaultOutputDir,
-  onAddJob,
+  onAddFiles,
+  onRemoveFile,
+  onClearFiles,
+  onSelectFile,
+  outputDir,
+  settings,
+  onAddJobs,
   onShowToast,
 }) {
   const [startTime, setStartTime] = useState(0);
@@ -33,20 +107,30 @@ export default function TrimmerTab({
   const [losslessCopy, setLosslessCopy] = useState(true);
   const [speed, setSpeed] = useState(1);
 
-  // Integrated Studio Features
-  const [rotation, setRotation] = useState('none'); // 'none', '90cw', '90ccw', '180', 'hflip', 'vflip'
-  const [aspectRatio, setAspectRatio] = useState('original'); // 'original', '16:9', '9:16', '1:1', '4:3'
-  const [canvasFit, setCanvasFit] = useState('pad'); // 'pad', 'crop', 'stretch'
-  const [audioBoostDb, setAudioBoostDb] = useState(0); // 0 = off, 1-24 dB
+  const [rotation, setRotation] = useState('none');
+  const [aspectRatio, setAspectRatio] = useState('original');
+  const [canvasFit, setCanvasFit] = useState('pad');
+  const [audioBoostDb, setAudioBoostDb] = useState(0);
   const [loudnorm, setLoudnorm] = useState(false);
   const [exportAsGif, setExportAsGif] = useState(false);
   const [gifFps, setGifFps] = useState(15);
-  const [audioExportFormat, setAudioExportFormat] = useState('original'); // 'original', 'mp3', 'wav', 'aac', 'flac', 'opus'
+  const [audioExportFormat, setAudioExportFormat] = useState('original');
   const [frameBlend, setFrameBlend] = useState(false);
+  const [trackMode, setTrackMode] = useState('keep');
+  const [includedTracks, setIncludedTracks] = useState([]);
+  const [customDir, setCustomDir] = useState('');
 
-  const [outputDir, setOutputDir] = useState(defaultOutputDir || '');
+  const isAudio = isAudioMedia(activeFile, mediaInfo);
+  const tracks = mediaInfo?.audioTracks || [];
+  const hasTrackChoice = tracks.length > 1;
+  const destination = customDir || outputDir;
 
-  const isAudio = isAudioMedia(currentFile, mediaInfo);
+  // Every new file starts from its full length with all of its tracks enabled.
+  useEffect(() => {
+    setStartTime(0);
+    setEndTime(mediaInfo?.duration || 0);
+    setIncludedTracks((mediaInfo?.audioTracks || []).map((t) => t.order));
+  }, [activeFile?.path, mediaInfo]);
 
   // Vegas-style frame blending (high-FPS source -> 60 fps). Eligibility is computed by the main process
   // from the probed frame rate: below 90 fps there is nothing to blend, 360 fps and above is refused.
@@ -55,137 +139,142 @@ export default function TrimmerTab({
   const blendActive = frameBlend && blendEligible && !exportAsGif;
   const blendFramesPerOutput = blendInfo?.sourceFps ? (blendInfo.sourceFps * speed) / (blendInfo.outputFps || 60) : 0;
 
-  // Never carry the option over to a clip that cannot use it
   useEffect(() => {
     if (!blendEligible) setFrameBlend(false);
-  }, [blendEligible, currentFile?.path]);
+  }, [blendEligible, activeFile?.path]);
 
-  // Keep endTime updated if file loads later
-  useEffect(() => {
-    if (mediaInfo?.duration && (endTime === 0 || endTime > mediaInfo.duration)) {
-      setEndTime(mediaInfo.duration);
-    }
-  }, [mediaInfo, endTime]);
+  const mergeTracks = hasTrackChoice && trackMode === 'merge' && includedTracks.length > 1;
+  const audioFiltered = audioBoostDb > 0 || loudnorm || mergeTracks;
 
-  // If rotation, aspect ratio, stretch fit, audio boost, or speed is changed, lossless copy cannot be used
+  // Stream copy needs an untouched picture; audio changes only re-encode the audio.
   const requiresReencode = isAudio
-    ? (audioBoostDb > 0 || loudnorm || speed !== 1 || (audioExportFormat !== 'original' && audioExportFormat !== currentFile?.ext))
-    : (rotation !== 'none' ||
-      aspectRatio !== 'original' ||
-      canvasFit === 'stretch' ||
-      audioBoostDb > 0 ||
-      loudnorm ||
-      exportAsGif ||
-      blendActive ||
-      speed !== 1);
-
+    ? audioFiltered || speed !== 1 || (audioExportFormat !== 'original' && audioExportFormat !== activeFile?.ext)
+    : rotation !== 'none' || aspectRatio !== 'original' || exportAsGif || blendActive || speed !== 1;
   const effectiveLossless = losslessCopy && !requiresReencode;
 
   const handlePickOutputDir = async () => {
     if (!window.itzCutAPI) return;
     const folder = await window.itzCutAPI.selectFolderDialog();
-    if (folder) setOutputDir(folder);
+    if (folder) setCustomDir(folder);
   };
 
+  const toggleTrack = (order) =>
+    setIncludedTracks((prev) => (prev.includes(order) ? prev.filter((o) => o !== order) : [...prev, order].sort((a, b) => a - b)));
+
   const clipDuration = Math.max(0, endTime - startTime);
+  const silent = !isAudio && (muteAudio || (hasTrackChoice && includedTracks.length === 0));
 
   const handleStartTrim = () => {
-    if (!currentFile) {
+    if (!activeFile) {
       onShowToast('Please load a media file first!', 'error');
       return;
     }
-
     if (endTime <= startTime) {
       onShowToast('Cut Out time must be greater than Cut In time!', 'error');
       return;
     }
+    if (!destination) {
+      onShowToast('Choose a destination folder first.', 'error');
+      return;
+    }
 
-    const baseName = currentFile.name.substring(0, currentFile.name.lastIndexOf('.')) || currentFile.name;
     const ext = isAudio
-      ? (audioExportFormat === 'original' ? (currentFile.ext || 'mp3') : audioExportFormat)
+      ? audioExportFormat === 'original'
+        ? activeFile.ext || 'mp3'
+        : audioExportFormat === 'aac'
+        ? 'm4a'
+        : audioExportFormat
       : exportAsGif
       ? 'gif'
-      : effectiveLossless || ['mp4', 'mov', 'mkv', 'm4v'].includes(currentFile.ext)
-      ? (currentFile.ext || 'mp4')
+      : effectiveLossless || ['mp4', 'mov', 'mkv', 'm4v'].includes(activeFile.ext)
+      ? activeFile.ext || 'mp4'
       : 'mp4'; // re-encodes produce H.264 + AAC, which WebM / AVI / WMV / FLV cannot carry
 
-    const targetDir = outputDir || defaultOutputDir;
-    const outputFile = `${targetDir}\\${baseName}_trimmed_${Date.now()}.${ext}`;
-
-    const jobConfig = {
-      jobId: `trim_${Date.now()}`,
-      inputFile: currentFile.path,
-      outputFile,
-      mode: 'trim',
-      duration: clipDuration,
-      options: {
-        start: startTime,
-        end: endTime,
-        muteAudio,
-        losslessCopy: effectiveLossless,
-        speed,
-        rotation,
-        aspectRatio,
-        canvasFit,
-        audioBoostDb,
-        loudnorm,
-        exportAsGif,
-        gifFps,
-        isAudioOnly: isAudio,
-        audioExportFormat: ext,
-        frameBlend: blendActive,
+    const range = `${formatTimecode(startTime)} - ${formatTimecode(endTime)}`;
+    onAddJobs([
+      {
+        inputFile: activeFile.path,
+        outputFile: buildOutputPath(destination, activeFile.name, `${settings.fileSuffix}_trim`, ext),
+        mode: 'trim',
+        duration: clipDuration,
+        options: {
+          start: startTime,
+          end: endTime,
+          muteAudio: !isAudio && muteAudio,
+          losslessCopy: effectiveLossless,
+          speed,
+          rotation,
+          aspectRatio,
+          canvasFit,
+          audioBoostDb,
+          loudnorm,
+          exportAsGif,
+          gifFps,
+          isAudioOnly: isAudio,
+          audioExportFormat: ext,
+          frameBlend: blendActive,
+          audioTracks: hasTrackChoice ? { mode: trackMode, include: includedTracks } : undefined,
+        },
+        title: isAudio
+          ? `Trim Audio (${range})`
+          : exportAsGif
+          ? `HD GIF Clip (${range})`
+          : blendActive
+          ? `Frame Blend ${blendInfo.sourceFps}→${blendInfo.outputFps} fps (${range})`
+          : `Trim Clip (${range})`,
+        inputName: activeFile.name,
       },
-      title: isAudio
-        ? `Trim Audio (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
-        : exportAsGif
-        ? `HD GIF Clip (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
-        : blendActive
-        ? `Frame Blend ${blendInfo.sourceFps}→${blendInfo.outputFps} fps (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`
-        : `Trim Clip (${formatTimecode(startTime)} - ${formatTimecode(endTime)})`,
-      inputName: currentFile.name,
-    };
-
-    onAddJob(jobConfig);
-    onShowToast(`Trimming started: ${Math.round(clipDuration)}s clip in progress!`, 'success');
+    ]);
   };
 
+  let losslessDescription = 'Instant cut without re-encoding: no quality loss.';
+  if (requiresReencode) {
+    losslessDescription = isAudio
+      ? 'Unavailable: audio filters, speed or format changes need re-encoding.'
+      : 'Unavailable: rotation, aspect ratio, speed, GIF or frame blending need re-encoding.';
+  } else if (effectiveLossless && !isAudio && audioFiltered && !silent) {
+    losslessDescription = 'Video copied untouched; only the audio is re-encoded.';
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <DropZone
-        currentFile={currentFile}
-        mediaInfo={mediaInfo}
-        onFileSelected={onFileSelected}
-        onFileCleared={onFileCleared}
+    <div className="tab-stack">
+      <MediaTray
+        files={files}
+        activeFileId={activeFile?.id}
+        onSelect={onSelectFile}
+        onRemove={onRemoveFile}
+        onClear={onClearFiles}
+        onAddFiles={onAddFiles}
         onShowToast={onShowToast}
+        batchHint={files.length > 1 ? 'The trimmer works on the selected file.' : null}
       />
 
-      {currentFile && (
+      {activeFile && (
         <>
-          {/* Conditionally render dedicated Audio Player or Video Player */}
           {isAudio ? (
             <AudioPreview
-              filePath={currentFile.path}
-              fileName={currentFile.name}
-              fileSize={currentFile.size}
+              filePath={activeFile.path}
+              fileName={activeFile.name}
+              fileSize={activeFile.size}
               duration={mediaInfo?.duration || 0}
               trimStart={startTime}
               trimEnd={endTime}
-              onSetTrimStart={(time) => setStartTime(time)}
-              onSetTrimEnd={(time) => setEndTime(time)}
-              isMuted={muteAudio}
+              onSetTrimStart={setStartTime}
+              onSetTrimEnd={setEndTime}
+              isMuted={false}
               audioBoostDb={audioBoostDb}
               speed={speed}
               mediaInfo={mediaInfo}
             />
           ) : (
             <MediaPreview
-              filePath={currentFile.path}
+              filePath={activeFile.path}
               duration={mediaInfo?.duration || 0}
               trimStart={startTime}
               trimEnd={endTime}
-              onSetTrimStart={(time) => setStartTime(time)}
-              onSetTrimEnd={(time) => setEndTime(time)}
-              isMuted={muteAudio}
+              onSetTrimStart={setStartTime}
+              onSetTrimEnd={setEndTime}
+              isMuted={silent}
               rotation={rotation}
               aspectRatio={aspectRatio}
               canvasFit={canvasFit}
@@ -195,9 +284,22 @@ export default function TrimmerTab({
             />
           )}
 
-          {/* Settings Grid */}
+          {hasTrackChoice && (
+            <AudioTracksPanel
+              tracks={tracks}
+              included={includedTracks}
+              onToggleTrack={toggleTrack}
+              mode={trackMode}
+              onModeChange={setTrackMode}
+              disabled={!isAudio && muteAudio}
+              duration={mediaInfo?.duration || 0}
+              start={startTime}
+              end={endTime}
+            />
+          )}
+
           <div className="grid-2">
-            {/* Cut Points & Trimming Range */}
+            {/* Cut points */}
             <div className="card">
               <div className="card-header">
                 <div className="card-title">
@@ -206,386 +308,185 @@ export default function TrimmerTab({
                 </div>
               </div>
 
-              <div className="grid-2" style={{ marginBottom: '14px' }}>
+              <div className="grid-2 tight">
                 <div className="form-group">
                   <label className="form-label">
                     <span>Cut Start [ In ]</span>
-                    <button
-                      className="icon-btn"
-                      onClick={() => setStartTime(0)}
-                      title="Reset to video start"
-                    >
-                      Reset 0s
+                    <button type="button" className="link-btn" onClick={() => setStartTime(0)} title="Back to the start of the file">
+                      Reset
                     </button>
                   </label>
                   <input
                     type="text"
-                    className="form-input"
-                    style={{ fontFamily: 'var(--font-mono)', fontSize: '15px' }}
+                    className="form-input timecode-input"
                     value={formatTimecode(startTime)}
                     onChange={(e) => setStartTime(parseTimecode(e.target.value))}
+                    aria-label="Cut start"
                   />
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">
                     <span>Cut End [ Out ]</span>
-                    <button
-                      className="icon-btn"
-                      onClick={() => setEndTime(mediaInfo?.duration || 0)}
-                      title="Set to video end"
-                    >
+                    <button type="button" className="link-btn" onClick={() => setEndTime(mediaInfo?.duration || 0)} title="To the end of the file">
                       To End
                     </button>
                   </label>
                   <input
                     type="text"
-                    className="form-input"
-                    style={{ fontFamily: 'var(--font-mono)', fontSize: '15px' }}
+                    className="form-input timecode-input"
                     value={formatTimecode(endTime)}
                     onChange={(e) => setEndTime(parseTimecode(e.target.value))}
+                    aria-label="Cut end"
                   />
                 </div>
               </div>
 
-              {/* Clip Duration Summary */}
-              <div
-                style={{
-                  padding: '12px 16px',
-                  background: 'rgba(230, 180, 34, 0.08)',
-                  border: '1px solid var(--border-gold)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '16px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Clock size={16} color="#e6b422" />
-                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Trimmed Clip Duration:</span>
-                </div>
-                <span
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '15px',
-                    fontWeight: 700,
-                    color: 'var(--gold-primary)',
-                  }}
-                >
-                  {formatTimecode(clipDuration)}
+              <div className="duration-summary">
+                <span className="duration-summary-label">
+                  <Clock size={15} className="icon-accent" />
+                  Clip Duration
                 </span>
+                <span className="duration-summary-value">{formatTimecode(clipDuration / speed)}</span>
               </div>
 
-              {/* Mode: Stream-Copy vs Frame Accurate */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <label className="toggle-wrapper">
-                  <div
-                    className={`toggle-switch ${muteAudio ? 'on' : ''}`}
-                    onClick={() => setMuteAudio(!muteAudio)}
-                  >
-                    <div className="toggle-knob" />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <VolumeX size={15} color={muteAudio ? '#e6b422' : 'var(--text-muted)'} />
-                      <span style={{ fontSize: '13px', fontWeight: 600 }}>Mute Clip Audio</span>
-                    </div>
-                    <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      Completely silences and strips audio track from the exported cut clip.
-                    </span>
-                  </div>
-                </label>
+              <div className="options-stack">
+                <Toggle
+                  checked={effectiveLossless}
+                  onChange={(value) => {
+                    if (requiresReencode) {
+                      onShowToast(losslessDescription, 'info');
+                      return;
+                    }
+                    setLosslessCopy(value);
+                  }}
+                  disabled={requiresReencode}
+                  icon={Zap}
+                  label="Instant Lossless Cut"
+                  description={losslessDescription}
+                />
 
-                <label className="toggle-wrapper">
-                  <div
-                    className={`toggle-switch ${effectiveLossless ? 'on' : ''}`}
-                    onClick={() => {
-                      if (!requiresReencode) setLosslessCopy(!losslessCopy);
-                    }}
-                    style={{ opacity: requiresReencode ? 0.5 : 1 }}
-                  >
-                    <div className="toggle-knob" />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Zap size={15} color={effectiveLossless ? '#e6b422' : 'var(--text-muted)'} />
-                      <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                        Instant Lossless Cut (Stream Copy)
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      {requiresReencode
-                        ? 'Disabled because rotation, aspect ratio, frame blending, or audio filters require re-encoding.'
-                        : 'Instant 0-second cut without re-encoding quality loss (-c copy).'}
-                    </span>
-                  </div>
-                </label>
-
-                {!effectiveLossless && (
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Playback Speed</label>
-                    <select
-                      className="form-select"
-                      value={speed}
-                      onChange={(e) => setSpeed(parseFloat(e.target.value))}
-                    >
-                      <option value="0.5">0.5x (Slow Motion)</option>
-                      <option value="1">1.0x (Normal Speed)</option>
-                      <option value="1.5">1.5x (Fast)</option>
-                      <option value="2">2.0x (Double Speed)</option>
-                    </select>
-                  </div>
+                <div className="inline-field">
+                  <span className="inline-field-label">Playback Speed</span>
+                  <Segmented size="sm" stretch={false} options={SPEEDS} value={speed} onChange={setSpeed} ariaLabel="Playback speed" />
+                </div>
+                {!isAudio && (
+                  <>
+                        <SectionLabel icon={Film}>Picture</SectionLabel>
+                        <div className="inline-field">
+                          <span className="inline-field-label">Orientation</span>
+                          <Segmented size="sm" stretch={false} options={ROTATIONS} value={rotation} onChange={setRotation} ariaLabel="Rotate and flip" />
+                        </div>
+                        <div className="stack-tight">
+                          <span className="inline-field-label">Aspect Ratio</span>
+                          <AspectPicker value={aspectRatio} onChange={setAspectRatio} />
+                          <Collapse open={aspectRatio !== 'original'}>
+                            <div className="inline-field nested">
+                              <span className="inline-field-label">Fit Mode</span>
+                              <Segmented size="sm" stretch={false} options={FIT_MODES} value={canvasFit} onChange={setCanvasFit} ariaLabel="Fit mode" />
+                            </div>
+                          </Collapse>
+                        </div>
+    
+                        <Toggle
+                          compact
+                          checked={blendActive}
+                          onChange={(value) => {
+                            if (!blendEligible) {
+                              if (blendInfo?.reason) onShowToast(blendInfo.reason, 'info');
+                              return;
+                            }
+                            if (exportAsGif) {
+                              onShowToast('Frame blending is not available for GIF exports.', 'info');
+                              return;
+                            }
+                            setFrameBlend(value);
+                          }}
+                          disabled={!blendEligible || exportAsGif}
+                          icon={Layers}
+                          label={`Frame Blending${blendInfo?.sourceFps ? ` · ${blendInfo.sourceFps} → ${blendInfo.outputFps} fps` : ''}`}
+                          description={
+                            !blendEligible
+                              ? blendInfo?.reason || 'Needs a high frame rate video (90–359 fps).'
+                              : blendActive
+                              ? blendFramesPerOutput > 1.01
+                                ? `About ${Math.round(blendFramesPerOutput * 100) / 100} source frames merged into every frame for natural motion blur.`
+                                : 'At this speed there are no extra frames to merge: the clip is conformed to 60 fps.'
+                              : 'Merges the extra frames of high-FPS footage into smooth 60 fps motion blur.'
+                          }
+                        />
+                  </>
                 )}
               </div>
             </div>
 
-            {/* Integrated Studio Enhancements */}
+            {/* Studio */}
             <div className="card">
               <div className="card-header">
                 <div className="card-title">
                   {isAudio ? <Music size={18} /> : <Sliders size={18} />}
-                  <span>{isAudio ? 'Audio Studio & Export Format' : 'Studio Enhancements'}</span>
+                  <span>{isAudio ? 'Audio Studio' : 'Studio Enhancements'}</span>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="options-stack">
                 {isAudio ? (
                   <>
-                    {/* Audio Export Format */}
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">
-                        <span>Export Audio Format</span>
-                        <Music size={14} color="#e6b422" />
-                      </label>
-                      <select
-                        className="form-select"
+                    <div className="form-group">
+                      <label className="form-label">Export Format</label>
+                      <Select
                         value={audioExportFormat}
-                        onChange={(e) => setAudioExportFormat(e.target.value)}
-                      >
-                        <option value="original">Original Format ({(currentFile?.ext || 'Audio').toUpperCase()})</option>
-                        <option value="mp3">MP3 (Universal 320 kbps)</option>
-                        <option value="wav">WAV (Uncompressed Studio PCM)</option>
-                        <option value="aac">AAC (M4A High Efficiency)</option>
-                        <option value="flac">FLAC (Lossless Master)</option>
-                        <option value="opus">OPUS (OGG Opus)</option>
-                      </select>
+                        onChange={setAudioExportFormat}
+                        options={[{ value: 'original', label: 'Original', hint: (activeFile.ext || 'audio').toUpperCase() }, ...AUDIO_EXPORT_FORMATS]}
+                        ariaLabel="Export format"
+                      />
                     </div>
-
-                    {/* Audio Gain Boost */}
-                    {!muteAudio && (
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">
-                          <span>Audio Gain Boost: {audioBoostDb > 0 ? `+${audioBoostDb} dB` : 'Off'}</span>
-                          <Volume2 size={14} color="#e6b422" />
-                        </label>
-                        <input
-                          type="range"
-                          className="range-slider"
-                          min="0"
-                          max="20"
-                          value={audioBoostDb}
-                          onChange={(e) => setAudioBoostDb(parseInt(e.target.value, 10))}
-                        />
-                      </div>
-                    )}
-
-                    {/* EBU R128 Loudness Normalization */}
-                    {!muteAudio && (
-                      <label className="toggle-wrapper">
-                        <div
-                          className={`toggle-switch ${loudnorm ? 'on' : ''}`}
-                          onClick={() => setLoudnorm(!loudnorm)}
-                        >
-                          <div className="toggle-knob" />
-                        </div>
-                        <span style={{ fontSize: '13px' }}>
-                          EBU R128 Broadcast Loudness Normalization (-16 LUFS)
-                        </span>
-                      </label>
-                    )}
+                    <AudioGainControl boostDb={audioBoostDb} onBoostChange={setAudioBoostDb} allowMute={false}>
+                      <Toggle compact checked={loudnorm} onChange={setLoudnorm} label="Loudness Normalization" description="EBU R128 broadcast level, -16 LUFS." />
+                    </AudioGainControl>
                   </>
                 ) : (
                   <>
-                    {/* Rotate & Flip with Reset button */}
-                    <div className="form-group">
-                      <label className="form-label">
-                        <span>Rotate & Flip</span>
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          onClick={() => {
-                            setRotation('none');
-                            onShowToast('Rotation reset to default (0°)', 'info');
-                          }}
-                          title="Reset rotation to default (0°)"
-                          style={{ padding: '3px 8px', borderColor: 'rgba(230, 180, 34, 0.4)' }}
-                        >
-                          <RotateCw size={13} color="#e6b422" />
-                        </button>
-                      </label>
-                      <select
-                        className="form-select"
-                        value={rotation}
-                        onChange={(e) => setRotation(e.target.value)}
-                      >
-                        <option value="none">Normal (No Rotation)</option>
-                        <option value="90cw">Rotate 90° Clockwise</option>
-                        <option value="90ccw">Rotate 90° Counter-Clockwise</option>
-                        <option value="180">Rotate 180° (Upside Down)</option>
-                        <option value="hflip">Flip Horizontally (Mirror)</option>
-                        <option value="vflip">Flip Vertically</option>
-                      </select>
-                    </div>
 
-                    {/* Live Aspect Ratio / Canvas */}
-                    <div className="grid-2">
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">
-                          <span>Aspect Ratio</span>
-                          <Crop size={14} color="#e6b422" />
-                        </label>
-                        <select
-                          className="form-select"
-                          value={aspectRatio}
-                          onChange={(e) => setAspectRatio(e.target.value)}
-                        >
-                          <option value="original">Original Aspect</option>
-                          <option value="9:16">9:16 (TikTok / Reels / Shorts)</option>
-                          <option value="16:9">16:9 (Landscape YouTube)</option>
-                          <option value="1:1">1:1 (Instagram Square)</option>
-                          <option value="4:3">4:3 (Classic Retro)</option>
-                        </select>
+                    <SectionLabel icon={Volume2}>Audio</SectionLabel>
+                    <AudioGainControl boostDb={audioBoostDb} onBoostChange={setAudioBoostDb} muted={muteAudio} onMutedChange={setMuteAudio}>
+                      <Toggle compact checked={loudnorm} onChange={setLoudnorm} label="Loudness Normalization" description="EBU R128 broadcast level, -16 LUFS." />
+                    </AudioGainControl>
+
+                    <SectionLabel icon={ImageIcon}>Export</SectionLabel>
+                    <Toggle compact checked={exportAsGif} onChange={setExportAsGif} label="Export as Animated GIF" description="High-definition looping GIF, no audio." />
+                    <Collapse open={exportAsGif}>
+                      <div className="inline-field nested">
+                        <span className="inline-field-label">GIF Frame Rate</span>
+                        <Segmented size="sm" stretch={false} options={GIF_RATES} value={gifFps} onChange={setGifFps} ariaLabel="GIF frame rate" />
                       </div>
-
-                      {aspectRatio !== 'original' && (
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label">Fit Mode</label>
-                          <select
-                            className="form-select"
-                            value={canvasFit}
-                            onChange={(e) => setCanvasFit(e.target.value)}
-                          >
-                            <option value="pad">Fit with Black Bars (Pad)</option>
-                            <option value="crop">Fill & Center Crop</option>
-                            <option value="stretch">Stretch to Fit</option>
-                          </select>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Vegas-style Frame Blending */}
-                    <label className="toggle-wrapper" title={blendEligible ? '' : blendInfo?.reason || ''}>
-                      <div
-                        className={`toggle-switch ${blendActive ? 'on' : ''}`}
-                        onClick={() => {
-                          if (!blendEligible) {
-                            if (blendInfo?.reason) onShowToast(blendInfo.reason, 'info');
-                            return;
-                          }
-                          if (exportAsGif) {
-                            onShowToast('Frame blending is not available for GIF exports.', 'info');
-                            return;
-                          }
-                          setFrameBlend(!frameBlend);
-                        }}
-                        style={{ opacity: blendEligible && !exportAsGif ? 1 : 0.45, cursor: blendEligible && !exportAsGif ? 'pointer' : 'not-allowed' }}
-                      >
-                        <div className="toggle-knob" />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Layers size={15} color={blendActive ? '#e6b422' : 'var(--text-muted)'} />
-                          <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                            Frame Blending {blendInfo?.sourceFps ? `(${blendInfo.sourceFps} → ${blendInfo.outputFps} fps)` : ''}
-                          </span>
-                        </div>
-                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                          {!blendEligible
-                            ? (blendInfo?.reason || 'Load a high frame rate video (90–359 fps) to enable.')
-                            : blendActive
-                            ? (blendFramesPerOutput > 1.01
-                              ? `Vegas-style resample: ~${Math.round(blendFramesPerOutput * 100) / 100} source frames merged into every 60 fps frame for natural motion blur.`
-                              : 'At this playback speed there are no extra frames to merge: the clip is conformed to 60 fps.')
-                            : 'Merges the extra frames of high-FPS footage into a smooth 60 fps export with natural motion blur (like Vegas / After Effects).'}
-                        </span>
-                      </div>
-                    </label>
-
-                    {/* Audio Gain Boost */}
-                    {!muteAudio && (
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">
-                          <span>Audio Gain Boost: {audioBoostDb > 0 ? `+${audioBoostDb} dB` : 'Off'}</span>
-                          <Volume2 size={14} color="#e6b422" />
-                        </label>
-                        <input
-                          type="range"
-                          className="range-slider"
-                          min="0"
-                          max="20"
-                          value={audioBoostDb}
-                          onChange={(e) => setAudioBoostDb(parseInt(e.target.value, 10))}
-                        />
-                      </div>
-                    )}
-
-                    {/* EBU R128 Loudness Normalization & GIF Export */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {!muteAudio && (
-                        <label className="toggle-wrapper">
-                          <div
-                            className={`toggle-switch ${loudnorm ? 'on' : ''}`}
-                            onClick={() => setLoudnorm(!loudnorm)}
-                          >
-                            <div className="toggle-knob" />
-                          </div>
-                          <span style={{ fontSize: '13px' }}>
-                            EBU R128 Broadcast Loudness Normalization (-16 LUFS)
-                          </span>
-                        </label>
-                      )}
-
-                      <label className="toggle-wrapper">
-                        <div
-                          className={`toggle-switch ${exportAsGif ? 'on' : ''}`}
-                          onClick={() => setExportAsGif(!exportAsGif)}
-                        >
-                          <div className="toggle-knob" />
-                        </div>
-                        <span style={{ fontSize: '13px' }}>
-                          Export Trimmed Clip as High-Definition Animated GIF
-                        </span>
-                      </label>
-                    </div>
+                    </Collapse>
                   </>
                 )}
 
-                {/* Output Folder */}
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Destination Folder</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={outputDir || defaultOutputDir || ''}
-                      readOnly
-                      style={{ flex: 1 }}
-                    />
-                    <button className="btn-secondary" onClick={handlePickOutputDir}>
-                      <Folder size={15} />
+                <div className="form-group">
+                  <label className="form-label">
+                    <span>Destination Folder</span>
+                    {customDir && customDir !== outputDir && (
+                      <button type="button" className="link-btn" onClick={() => setCustomDir('')}>
+                        Reset
+                      </button>
+                    )}
+                  </label>
+                  <div className="path-field">
+                    <span className="path-value" title={destination}>
+                      {destination || '…'}
+                    </span>
+                    <button type="button" className="btn-secondary btn-compact" onClick={handlePickOutputDir}>
+                      <Folder size={14} />
                       <span>Browse</span>
                     </button>
                   </div>
                 </div>
 
-                <button
-                  className="btn-gold"
-                  style={{ width: '100%', padding: '12px', marginTop: '6px' }}
-                  onClick={handleStartTrim}
-                >
+                <button className="btn-gold btn-block" onClick={handleStartTrim}>
                   <Scissors size={16} />
-                  <span>{isAudio ? 'Execute Audio Trim' : 'Execute Clip Trim'}</span>
+                  <span>{isAudio ? 'Export Audio Clip' : 'Export Clip'}</span>
                 </button>
               </div>
             </div>

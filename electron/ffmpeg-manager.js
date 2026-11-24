@@ -32,6 +32,9 @@ const USER_AGENT = 'itzCut-Desktop';
 const WEB_VIDEO_CODECS = ['h264', 'vp8', 'vp9', 'av1'];
 const WEB_AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'flac'];
 const NON_WEB_CONTAINERS = ['.avi', '.wmv', '.flv', '.ts', '.m2ts', '.mts', '.3gp', '.vob', '.mpg', '.mpeg'];
+/** Chromium decodes HEVC through the GPU on most Windows PCs; the renderer checks and only asks for a proxy when it cannot. */
+const NATIVE_HEVC_CONTAINERS = ['.mp4', '.mov', '.m4v'];
+const PREVIEW_DIR_NAME = 'itzcut_previews';
 
 /** Synthetic clips the blend engine self-test runs through FFmpeg: one even, one fractional ratio. */
 const BLEND_SELF_TEST = { width: 64, height: 36, cases: [{ fps: 240, frames: 48 }, { fps: 100, frames: 40 }] };
@@ -82,23 +85,35 @@ function runFile(file, args, timeout = 10000) {
   return execFileAsync(file, args, { windowsHide: true, timeout, maxBuffer: 32 * 1024 * 1024 });
 }
 
-/** Runs a process and resolves with its raw stdout. */
-function collectOutput(file, args, timeout = 15000) {
+/**
+ * Runs a process and resolves with its raw stdout.
+ * @param timeout milliseconds before the process is killed; 0 for none
+ * @param onSpawn receives the child process (used to cancel long runs)
+ */
+function collectOutput(file, args, timeout = 15000, { onSpawn, lowPriority = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (lowPriority && child.pid) {
+      try {
+        os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+      } catch {
+        // Exited already.
+      }
+    }
+    if (onSpawn) onSpawn(child);
     const chunks = [];
     let stderr = '';
-    const timer = setTimeout(() => child.kill(), timeout);
+    const timer = timeout > 0 ? setTimeout(() => child.kill(), timeout) : null;
     child.stdout.on('data', (chunk) => chunks.push(chunk));
     child.stderr.on('data', (chunk) => {
       stderr = (stderr + chunk).slice(-2000);
     });
     child.on('error', (err) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       reject(err);
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       if (code === 0) resolve(Buffer.concat(chunks));
       else reject(new Error(stderr.trim() || `${path.basename(file)} exited with code ${code}`));
     });
@@ -210,6 +225,14 @@ async function findDirectoryContaining(root, fileName) {
   return null;
 }
 
+/** Muxers write placeholder handler names ("SoundHandler") that say nothing about the track. */
+const GENERIC_HANDLER = /^(sound ?handler|.*media handler|core media audio|audio|aac|track ?\d*)$/i;
+
+function trackTitle(tags) {
+  const title = (tags.title || tags.handler_name || '').trim();
+  return GENERIC_HANDLER.test(title) ? '' : title;
+}
+
 function describeBlendCapability(videoStream) {
   const sourceFps = frameBlend.resolveSourceFps(videoStream.r_frame_rate, videoStream.avg_frame_rate);
   const plan = frameBlend.planFrameBlend({ sourceFps });
@@ -226,7 +249,8 @@ function describeBlendCapability(videoStream) {
 
 function previewProxyReason(fileExt, videoCodec, audioCodec) {
   if (NON_WEB_CONTAINERS.includes(fileExt)) return `Container ${fileExt.toUpperCase()} requires fast preview proxy`;
-  if (videoCodec && !WEB_VIDEO_CODECS.includes(videoCodec)) return `Video codec ${videoCodec.toUpperCase()} requires fast preview proxy`;
+  if (videoCodec === 'hevc' && NATIVE_HEVC_CONTAINERS.includes(fileExt) && (!audioCodec || WEB_AUDIO_CODECS.includes(audioCodec))) return '';
+  if (videoCodec &&!WEB_VIDEO_CODECS.includes(videoCodec)) return `Video codec ${videoCodec.toUpperCase()} requires fast preview proxy`;
   if (audioCodec && !WEB_AUDIO_CODECS.includes(audioCodec)) return `Audio codec ${audioCodec.toUpperCase()} requires fast preview proxy`;
   if (fileExt === '.mkv' && !['vp8', 'vp9', 'av1'].includes(videoCodec)) return 'MKV container requires fast preview proxy';
   return '';
@@ -246,7 +270,12 @@ class FFmpegManager {
     this._detecting = null;
     this._selectingBlendEngine = null;
     this._probes = new Map();
-    this._proxies = new Map();
+    this._proxies = new Map(); // proxyPath -> pending promise
+    this._proxyProcesses = new Map(); // source filePath -> running proxy encode
+  }
+
+  static previewDir() {
+    return path.join(os.tmpdir(), PREVIEW_DIR_NAME);
   }
 
   snapshot() {
@@ -425,7 +454,8 @@ class FFmpegManager {
     const streams = metadata.streams || [];
     // Cover art is exposed as a video stream; it must not turn an audio file into a "video".
     const videoStream = streams.find((s) => s.codec_type === 'video' && !(s.disposition && s.disposition.attached_pic));
-    const audioStream = streams.find((s) => s.codec_type === 'audio');
+    const audioStreams = streams.filter((s) => s.codec_type === 'audio');
+    const audioStream = audioStreams[0];
 
     const fileExt = path.extname(filePath).toLowerCase();
     const videoCodec = videoStream ? (videoStream.codec_name || '').toLowerCase() : '';
@@ -461,6 +491,21 @@ class FFmpegManager {
             bitRate: parseInt(audioStream.bit_rate || 0, 10),
           }
         : null,
+      audioTracks: audioStreams.map((s, order) => {
+        const tags = s.tags || {};
+        return {
+          order, // position among the audio streams: FFmpeg's 0:a:N
+          index: s.index,
+          codec: s.codec_name,
+          channels: s.channels || 0,
+          channelLayout: s.channel_layout || '',
+          sampleRate: parseInt(s.sample_rate || 0, 10),
+          bitRate: parseInt(s.bit_rate || 0, 10),
+          language: tags.language && tags.language !== 'und' ? tags.language : '',
+          title: trackTitle(tags),
+          isDefault: !!(s.disposition && s.disposition.default),
+        };
+      }),
       allStreams: streams.map((s) => ({ index: s.index, codecType: s.codec_type, codecName: s.codec_name })),
     };
   }
@@ -516,14 +561,17 @@ class FFmpegManager {
     if (!filePath || !(await pathExists(filePath))) throw new Error(`File does not exist: ${filePath}`);
     const ffmpegPath = await this._requireBinary('ffmpeg');
 
-    const proxyDir = path.join(os.tmpdir(), 'itzcut_previews');
+    const proxyDir = FFmpegManager.previewDir();
     const stat = await fsp.stat(filePath);
     const hash = crypto.createHash('md5').update(`${filePath}_${stat.mtimeMs}_${stat.size}`).digest('hex');
     const proxyPath = path.join(proxyDir, `proxy_${hash}.mp4`);
 
     let pending = this._proxies.get(proxyPath);
     if (!pending) {
-      pending = this._generatePreviewProxy(ffmpegPath, filePath, proxyDir, proxyPath).finally(() => this._proxies.delete(proxyPath));
+      const run = this._generatePreviewProxy(ffmpegPath, filePath, proxyDir, proxyPath);
+      pending = run.finally(() => {
+        if (this._proxies.get(proxyPath) === pending) this._proxies.delete(proxyPath);
+      });
       this._proxies.set(proxyPath, pending);
     }
     return pending;
@@ -539,32 +587,72 @@ class FFmpegManager {
 
     // Encode into a scratch name and publish with a rename, so an interrupted run can never be
     // mistaken for a finished proxy.
-    const partialPath = `${proxyPath}.${process.pid}.part.mp4`;
+    // Unique per run: a canceled encode may still be releasing its file when a new one starts.
+    this._proxyRuns = (this._proxyRuns || 0) + 1;
+    const partialPath = `${proxyPath}.${process.pid}.${this._proxyRuns}.part.mp4`;
+    let child = null;
     try {
+      // No timeout: long sources legitimately take minutes, and cancelPreviewProxy() stops the
+      // encode as soon as the preview is closed. Below-normal priority keeps exports responsive.
       await collectOutput(
         ffmpegPath,
         [
           '-y', '-hide_banner', '-v', 'error',
           '-i', filePath,
-          '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'fastdecode', '-crf', '26',
+          '-map', '0:v:0', '-map', '0:a:0?',
+          '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'fastdecode', '-crf', '27', '-g', '48',
           '-vf', 'scale=trunc(min(1280\\,iw)/2)*2:trunc(min(720\\,ih)/2)*2,format=yuv420p',
           '-c:a', 'aac', '-b:a', '128k',
           '-movflags', '+faststart',
           partialPath,
         ],
-        30 * 60 * 1000
+        0,
+        {
+          lowPriority: true,
+          onSpawn: (spawned) => {
+            child = spawned;
+            child.itzProxyPath = proxyPath;
+            this._proxyProcesses.set(filePath, spawned);
+          },
+        }
       );
       await fsp.rename(partialPath, proxyPath);
       return proxyPath;
     } catch (err) {
       await fsp.rm(partialPath, { force: true }).catch(() => {});
+      if (child && child.itzCanceled) throw new Error('Preview proxy canceled.');
       throw new Error(`Failed to generate preview proxy: ${err.message.slice(-300)}`);
+    } finally {
+      if (this._proxyProcesses.get(filePath) === child) this._proxyProcesses.delete(filePath);
     }
+  }
+
+  /**
+   * Stops the proxy encode of a file nobody is looking at any more (the preview was closed or
+   * another file was opened). Without this a multi-hour source keeps the CPU busy long after.
+   */
+  cancelPreviewProxy(filePath) {
+    const child = this._proxyProcesses.get(filePath);
+    if (!child) return false;
+    child.itzCanceled = true;
+    // A request made right after this one must start a fresh encode, not join the canceled one.
+    this._proxyProcesses.delete(filePath);
+    this._proxies.delete(child.itzProxyPath);
+    try {
+      child.kill();
+    } catch {
+      // Exited already.
+    }
+    return true;
+  }
+
+  cancelAllPreviewProxies() {
+    for (const filePath of [...this._proxyProcesses.keys()]) this.cancelPreviewProxy(filePath);
   }
 
   /** Deletes preview proxies that have not been used for a few days. */
   async cleanupPreviewCache() {
-    const proxyDir = path.join(os.tmpdir(), 'itzcut_previews');
+    const proxyDir = FFmpegManager.previewDir();
     const cutoff = Date.now() - PREVIEW_MAX_AGE_MS;
     try {
       for (const name of await fsp.readdir(proxyDir)) {

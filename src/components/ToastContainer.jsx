@@ -15,7 +15,7 @@ export default function ToastContainer({ toasts, onDismiss }) {
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {isSuccess && <CheckCircle2 size={18} color="#2ea043" />}
               {isError && <AlertCircle size={18} color="#f85149" />}
-              {!isSuccess && !isError && <Info size={18} color="#e6b422" />}
+              {!isSuccess && !isError && <Info size={18} color="var(--gold-primary)" />}
             </div>
 
             <div style={{ flex: 1, fontSize: '13px', lineHeight: '1.4' }}>
